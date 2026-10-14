@@ -1,0 +1,57 @@
+# --- Python environments ---
+.venv/
+venv/
+env/
+
+# --- Python build / cache ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+build/
+dist/
+
+# --- Notebooks ---
+.ipynb_checkpoints/
+
+# --- Data: never commit; keep only the folder skeleton and the README ---
+data/**
+!data/**/
+!data/**/.gitkeep
+!data/README.md
+
+# --- Large rasters/weights anywhere (tiny test fixtures re-allowed below) ---
+*.tif
+*.tiff
+*.img
+*.onnx
+*.pt
+*.pth
+*.ckpt
+!tests/fixtures/*.tif
+
+# --- Models: keep the model card and folder skeleton only ---
+models/*
+!models/.gitkeep
+!models/MODEL_CARD.md
+
+# --- Experiment tracking / logs / outputs ---
+mlruns/
+wandb/
+logs/
+outputs/
+
+# --- Secrets ---
+.env
+.env.*
+!.env.example
+
+# --- OS / editor ---
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

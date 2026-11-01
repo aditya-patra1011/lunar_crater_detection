@@ -23,6 +23,7 @@ data/**
 !data/**/
 !data/**/.gitkeep
 !data/README.md
+!data/DATA_CARD.md
 
 # --- Large rasters/weights anywhere (tiny test fixtures re-allowed below) ---
 *.tif

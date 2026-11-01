@@ -43,7 +43,7 @@ pytest
 ## Roadmap
 
 - [x] Repository skeleton, CI and pre-commit
-- [ ] Data download and data card
+- [x] Data download and data card
 - [ ] Tiling and label rasterization
 - [ ] Geographic split and evaluation protocol
 - [ ] Classical baseline and evaluation harness

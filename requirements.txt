@@ -1,2 +1,2 @@
-# Runtime dependencies are added in the PR that first needs them.
+# Installs the package in editable mode. Runtime dependencies belong in pyproject.toml.
 -e .

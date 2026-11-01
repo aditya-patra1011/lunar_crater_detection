@@ -83,7 +83,7 @@ SOURCES: dict[str, Source] = {
                     ),
                     filename="Lunar_LRO_LOLA_Global_LDEM_118m_Mar2014.tif",
                     size=8_494_203_833,
-                    # Not pinned yet: pin from the sha256 logged after the first full download.
+                    sha256="de6fb1cfcb09eaa602918560224c5842b2eadcd159c59e8798fab6df00d7d9a0",
                 ),
             ),
         ),

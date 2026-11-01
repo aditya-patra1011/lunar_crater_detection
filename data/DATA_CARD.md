@@ -32,8 +32,6 @@ The `_IMG` columns come from rims traced on imagery. The bundle's `document/` fo
 | Resolution | 256 px/deg, about 118 m/px at the equator |
 | Values | Scaled integers. Read the scale and offset from the file's metadata, or convert with `gdal_translate -ot Float32 -unscale` |
 
-Its checksum is not pinned yet: the downloader logs the SHA-256 after the first full download, and it should then be added to the registry.
-
 ## LOLA global DEM, 474 m (`lola_ldem_64`)
 
 | | |

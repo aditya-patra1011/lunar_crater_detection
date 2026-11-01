@@ -33,6 +33,7 @@ data/**
 *.pth
 *.ckpt
 !tests/fixtures/*.tif
+!tests/fixtures/*.tiff
 
 # --- Models: keep the model card and folder skeleton only ---
 models/*

@@ -7,7 +7,8 @@ name = "lunar-crater-detection"
 dynamic = ["version"]
 description = "Lunar crater detection from LRO/LOLA topography: data pipeline, models, evaluation and serving."
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
+# Runtime dependencies are declared here, in the PR that first needs them.
 dependencies = []
 
 [tool.setuptools.dynamic]
@@ -25,4 +26,7 @@ select = ["E", "F", "I", "UP", "B"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-ra"
+addopts = "-ra --cov=lunar_crater --cov-report=term-missing"
+
+[tool.coverage.run]
+branch = true

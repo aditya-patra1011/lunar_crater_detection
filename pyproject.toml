@@ -9,7 +9,11 @@ description = "Lunar crater detection from LRO/LOLA topography: data pipeline, m
 readme = "README.md"
 requires-python = ">=3.11"
 # Runtime dependencies are declared here, in the PR that first needs them.
-dependencies = []
+dependencies = [
+    "numpy>=2.1",
+    "pandas>=2.2",
+    "rasterio>=1.4",
+]
 
 [tool.setuptools.dynamic]
 version = { attr = "lunar_crater.__version__" }

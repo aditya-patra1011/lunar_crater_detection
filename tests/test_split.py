@@ -102,3 +102,16 @@ def test_split_is_reproducible(tmp_path):
     pd.testing.assert_frame_equal(first, pd.read_csv(tmp_path / "split.csv"))
     summary = pd.read_csv(tmp_path / "split_summary.csv", index_col=0)
     assert summary["tiles"].sum() == 500
+
+
+def test_seed_search_picks_the_least_imbalanced_seed(tmp_path):
+    tiles = tiles_table(800)
+    scores = [split_mod.imbalance(tiles, split_tiles(tiles, seed=s)) for s in range(8)]
+
+    seed, score = split_mod.most_balanced_seed(tiles, 8)
+
+    assert score == min(scores) and seed == scores.index(min(scores))
+    tiles.to_csv(tmp_path / "tiles.csv", index=False)
+    assert split_mod.main([str(tmp_path), "--search-seeds", "8"]) == 0
+    meta = pd.read_json(tmp_path / "split_meta.json", typ="series")
+    assert meta["seed_used"] == seed

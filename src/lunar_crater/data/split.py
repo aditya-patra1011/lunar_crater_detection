@@ -122,6 +122,37 @@ def summarize(tiles: pd.DataFrame, split: pd.DataFrame) -> pd.DataFrame:
     return summary.reindex([*SPLITS, DROPPED]).dropna(how="all")
 
 
+def imbalance(tiles: pd.DataFrame, split: pd.DataFrame) -> float:
+    """Worst relative gap between val/test and the whole tile set in terrain mix.
+
+    Compares near-side fraction (as a share of its 0.5 ideal), craters per tile and
+    mean |latitude|. Uses only tile metadata, never model results.
+    """
+    near = (tiles["lon"].abs() < 90).mean()
+    density = tiles["n_craters"].mean()
+    abs_lat = tiles["lat"].abs().mean()
+    summary = summarize(tiles, split)
+    worst = 0.0
+    for name in ("val", "test"):
+        if name not in summary.index:
+            return math.inf
+        row = summary.loc[name]
+        worst = max(
+            worst,
+            abs(row["near_side_fraction"] - near) / 0.5,
+            abs(row["craters_per_tile"] / density - 1),
+            abs(row["mean_abs_lat"] / abs_lat - 1),
+        )
+    return float(worst)
+
+
+def most_balanced_seed(tiles: pd.DataFrame, n_seeds: int, **kwargs) -> tuple[int, float]:
+    """Try seeds 0..n_seeds-1 and return the one with the lowest :func:`imbalance`."""
+    scores = [(imbalance(tiles, split_tiles(tiles, seed=s, **kwargs)), s) for s in range(n_seeds)]
+    score, seed = min(scores)
+    return seed, score
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("tiles_dir", type=Path, help="folder written by lunar_crater.data.tiles")
@@ -130,21 +161,32 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--fractions", type=float, nargs=3, default=(0.7, 0.15, 0.15))
     parser.add_argument("--buffer-km", type=float, default=30.0)
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument(
+        "--search-seeds",
+        type=int,
+        default=0,
+        metavar="N",
+        help="ignore --seed and use the most balanced of seeds 0..N-1",
+    )
     args = parser.parse_args(argv)
 
     tiles = pd.read_csv(args.tiles_dir / "tiles.csv")
-    split = split_tiles(
-        tiles,
-        n_bands=args.n_bands,
-        cells_at_equator=args.cells_at_equator,
-        fractions=tuple(args.fractions),
-        buffer_km=args.buffer_km,
-        seed=args.seed,
-    )
+    options = {
+        "n_bands": args.n_bands,
+        "cells_at_equator": args.cells_at_equator,
+        "fractions": tuple(args.fractions),
+        "buffer_km": args.buffer_km,
+    }
+    seed = args.seed
+    if args.search_seeds:
+        seed, _ = most_balanced_seed(tiles, args.search_seeds, **options)
+        print(f"most balanced seed: {seed}", file=sys.stderr)
+    split = split_tiles(tiles, seed=seed, **options)
     summary = summarize(tiles, split)
     split.to_csv(args.tiles_dir / "split.csv", index=False)
     summary.to_csv(args.tiles_dir / "split_summary.csv")
     meta = {k: str(v) if isinstance(v, Path) else v for k, v in vars(args).items()}
+    meta |= {"seed_used": seed, "imbalance": imbalance(tiles, split)}
     (args.tiles_dir / "split_meta.json").write_text(json.dumps(meta, indent=2) + "\n")
     print(summary.to_string(), file=sys.stderr)
     return 0

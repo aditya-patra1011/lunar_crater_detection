@@ -44,7 +44,7 @@ pytest
 
 - [x] Repository skeleton, CI and pre-commit
 - [x] Data download and data card
-- [ ] Tiling and label rasterization
+- [x] Tiling and label rasterization
 - [ ] Geographic split and evaluation protocol
 - [ ] Classical baseline and evaluation harness
 - [ ] U-Net baseline training

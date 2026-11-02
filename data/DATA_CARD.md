@@ -47,6 +47,7 @@ At 474 m/px a 1 km crater spans about 2 pixels, so this DEM can't be used to eva
 ## Known issues
 
 - **Incomplete labels.** The catalog is roughly complete above 1-2 km only. A detection with no catalog match may be a real crater, so measured precision is a lower bound.
-- **Projection stretch.** Simple cylindrical grids stretch east-west by 1/cos(latitude): 2x at 60 degrees. Craters away from the equator look like ellipses unless tiles are reprojected.
+- **Labels from imagery.** Rims were traced on images, not on topography. Some degraded craters are clear in images but faint in the DEM, so a few labels mark craters the model can barely see.
+- **Projection stretch.** Simple cylindrical grids stretch east-west by 1/cos(latitude): 2x at 60 degrees. The tiler reprojects every tile to remove this (see [decision 0001](../docs/decisions/0001-orthographic-tiles.md)).
 - **Track gaps.** LOLA samples along orbit tracks that are widely spaced near the equator, so low-latitude DEM pixels between tracks are interpolated and can show track artefacts.
 - **Resolution floor.** At 118 m/px a 1 km crater is about 8.5 pixels across. Smaller craters are not reliably resolved, so the evaluation should set a minimum diameter.

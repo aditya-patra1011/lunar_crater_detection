@@ -1,10 +1,10 @@
 # Evaluation protocol
 
-This is fixed before any model is trained, so baselines and models are scored the same way. The code is `lunar_crater.evaluation.matching`.
+This is fixed before any model is trained, so baselines and models are scored the same way. The code is `lunar_crater.evaluation.matching`, and `lunar_crater.evaluation.harness` runs a detector over a split and scores it. Results so far are in [BASELINES.md](BASELINES.md).
 
 ## Data
 
-- **Test set:** tiles with `split == "test"` in `split.csv` ([decision 0002](decisions/0002-geographic-split.md)). They are used once per final model, never for tuning. Tuning uses `val`.
+- **Test set:** tiles with `split == "test"` in `split.csv` ([decision 0002](decisions/0002-geographic-split.md)). They are used once per final model, never for tuning. Tuning uses `val`, including the score threshold; the harness refuses a test run without a threshold given from val.
 - **Ground truth:** the Robbins catalog craters in `craters.csv` for each tile.
 
 ## Matching

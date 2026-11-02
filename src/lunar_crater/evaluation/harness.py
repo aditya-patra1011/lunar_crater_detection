@@ -149,7 +149,14 @@ def main(argv: list[str] | None = None) -> int:
         nargs="*",
         help="score thresholds to sweep (default: 20 steps over the scores)",
     )
+    parser.add_argument(
+        "--min-score",
+        type=float,
+        help="score threshold for metrics.csv, chosen on val (default: best F1 on this split)",
+    )
     args = parser.parse_args(argv)
+    if args.split == "test" and args.min_score is None:
+        parser.error("--split test needs --min-score, chosen on val")
 
     detector_cls = DETECTORS[args.detector]
     detector = detector_cls(**parse_params(detector_cls, args.params))
@@ -164,7 +171,7 @@ def main(argv: list[str] | None = None) -> int:
 
     thresholds = args.thresholds or default_thresholds(preds["score"])
     curve = sweep(preds, tiles, craters, thresholds)
-    best = best_threshold(curve)
+    best = best_threshold(curve) if args.min_score is None else args.min_score
     metrics = score(preds, tiles, craters, min_score=best)
 
     args.out.mkdir(parents=True, exist_ok=True)
@@ -177,11 +184,12 @@ def main(argv: list[str] | None = None) -> int:
         "n_tiles": len(tiles),
         "detector": args.detector,
         "params": dataclasses.asdict(detector),
-        "best_min_score": best,
+        "min_score": best,
+        "min_score_from": "this split" if args.min_score is None else "given",
         "seconds_per_tile": seconds / max(len(tiles), 1),
     }
     (args.out / "run.json").write_text(json.dumps(run, indent=2) + "\n")
-    print(f"best min_score {best:.4g} on {len(tiles)} {args.split} tiles", file=sys.stderr)
+    print(f"min_score {best:.4g} on {len(tiles)} {args.split} tiles", file=sys.stderr)
     print(metrics.round(3).to_string(), file=sys.stderr)
     return 0
 

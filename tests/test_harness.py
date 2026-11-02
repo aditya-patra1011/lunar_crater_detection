@@ -120,10 +120,18 @@ def test_main_writes_results(tiles_dir, tmp_path, monkeypatch):
             "max_radius_px=20",
             "--limit",
             "1",
+            "--min-score",
+            "0.1",
         ]
     )
     assert code == 0
     run = json.loads((out / "run.json").read_text())
     assert run["n_tiles"] == 1 and run["params"]["max_radius_px"] == 20.0
+    assert run["min_score"] == 0.1 and run["min_score_from"] == "given"
     for name in ("predictions.csv", "sweep.csv", "metrics.csv"):
         assert (out / name).exists()
+
+
+def test_main_refuses_to_tune_on_test(tiles_dir, tmp_path):
+    with pytest.raises(SystemExit):
+        harness.main([str(tiles_dir), "--split", "test", "--out", str(tmp_path / "out")])

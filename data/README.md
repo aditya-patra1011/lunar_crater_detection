@@ -30,7 +30,7 @@ Files go to `raw/` and are checked against their recorded size and SHA-256. An i
 ## Tiles
 
 ```bash
-python -m lunar_crater.data.tiles --count 1000 --out data/interim/tiles/v1
+python -m lunar_crater.data.tiles --count 3000 --out data/interim/tiles/v1
 ```
 
 This cuts 256 x 256 tiles at 118 m/px from the 118 m DEM. Tile centres are drawn uniformly over the sphere with a fixed seed, and each tile is reprojected to a local orthographic grid ([decision 0001](../docs/decisions/0001-orthographic-tiles.md)). Generation takes about 0.4 s per tile. Each output folder contains:
@@ -41,3 +41,17 @@ This cuts 256 x 256 tiles at 118 m/px from the 118 m DEM. Tile centres are drawn
 - `meta.json`: the arguments and package versions used
 
 To check labels by eye, run `python scripts/plot_tiles.py data/interim/tiles/v1 out.png`, which needs `matplotlib` from `requirements-dev.txt`.
+
+## Split
+
+```bash
+python -m lunar_crater.data.split data/interim/tiles/v1 --search-seeds 200
+```
+
+This assigns every tile to `train`, `val`, `test` or `buffer` by region ([decision 0002](../docs/decisions/0002-geographic-split.md)). It uses the seed whose val and test terrain mix best matches the whole set (seed 122 for v1). It writes three files into the tiles folder:
+
+- `split.csv`: `tile_id`, `cell` and `split`
+- `split_summary.csv`: tiles, craters and terrain mix per split
+- `split_meta.json`: the parameters, the seed used and its imbalance score
+
+`python scripts/plot_split.py data/interim/tiles/v1 out.png` maps the result. How models are scored on the test split is set out in [docs/EVALUATION.md](../docs/EVALUATION.md).

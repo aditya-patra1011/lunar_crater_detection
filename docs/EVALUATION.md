@@ -32,4 +32,4 @@ All metrics are computed over the pooled crater counts from all test tiles, and 
 
 - **Precision is a lower bound.** The catalog is complete only above about 1-2 km, and rims were traced on imagery, so some unmatched predictions are real craters. A manual audit of a sample of false positives will estimate how many.
 - **The smallest bins are the hardest.** At 118 m/px a 1-2 km crater spans 8-17 pixels, and the catalog is least complete there.
-- **Results depend on the test regions.** Report the split seed with every result, and compare models only on the same split.
+- **Results depend on the test regions.** Report the tile set and split seed with every result (v1, seed 122 at the time of writing), and compare models only on the same split.

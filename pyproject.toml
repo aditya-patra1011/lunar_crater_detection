@@ -15,6 +15,11 @@ dependencies = [
     "rasterio>=1.4",
 ]
 
+[project.optional-dependencies]
+# Model training and the U-Net detector. Install the build that matches your hardware
+# (CPU or CUDA) from pytorch.org; Colab already has one.
+train = ["torch>=2.9"]
+
 [tool.setuptools.dynamic]
 version = { attr = "lunar_crater.__version__" }
 

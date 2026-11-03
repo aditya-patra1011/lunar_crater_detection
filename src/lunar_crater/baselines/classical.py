@@ -25,6 +25,7 @@ import numpy as np
 import pandas as pd
 
 from lunar_crater.evaluation.matching import circle_iou
+from lunar_crater.postprocess.peaks import fast_size, find_circles
 
 
 @dataclass(frozen=True)
@@ -69,7 +70,7 @@ class RadialSlopeDetector:
         radii = self.radii()
         pad = int(np.ceil(radii[-1])) + 1
         h, w = dem.shape
-        shape = (_fast_size(h + pad), _fast_size(w + pad))
+        shape = (fast_size(h + pad), fast_size(w + pad))
         fx, fy, fm = (np.fft.rfft2(a, shape) for a in (gx, gy, ok.astype(float)))
 
         scores = np.empty((len(radii), h, w))
@@ -94,17 +95,7 @@ class RadialSlopeDetector:
         radii = self.radii()
         scores, coverage = self.score_volume(dem, scale_m)
         scores = np.where(coverage >= self.min_coverage, scores, -np.inf)
-        k, y, x = np.nonzero(_local_maxima(scores) & (scores >= self.min_score))
-        found = pd.DataFrame(
-            {
-                "x_px": x.astype(float),
-                "y_px": y.astype(float),
-                "r_px": radii[k] * self.radius_scale,
-                "score": scores[k, y, x],
-            }
-        )
-        found = found.sort_values("score", ascending=False, ignore_index=True)
-        return found.iloc[_greedy_nms(found, self.nms_iou)].reset_index(drop=True)
+        return find_circles(scores, radii * self.radius_scale, self.min_score, self.nms_iou)
 
 
 def fit_radius_scale(pred: pd.DataFrame, truth: pd.DataFrame, min_iou: float = 0.3) -> float:
@@ -149,42 +140,3 @@ def _kernels(r: float, inner: float, pad: int, shape: tuple[int, int]):
         return np.fft.rfft2(grid)
 
     return fft(ux), fft(uy), fft(ring.astype(float)), float(ring.sum())
-
-
-def _fast_size(n: int) -> int:
-    """The smallest size >= n with no prime factor above 5, which FFTs handle fast."""
-    while True:
-        m = n
-        for p in (2, 3, 5):
-            while m % p == 0:
-                m //= p
-        if m == 1:
-            return n
-        n += 1
-
-
-def _local_maxima(volume: np.ndarray) -> np.ndarray:
-    """True where a value is the maximum of its 3x3x3 neighbourhood."""
-    peak = volume
-    for axis in range(volume.ndim):
-        padded = np.pad(
-            peak,
-            [(1, 1) if a == axis else (0, 0) for a in range(volume.ndim)],
-            constant_values=-np.inf,
-        )
-        n = volume.shape[axis]
-        peak = np.maximum(
-            np.maximum(padded.take(range(0, n), axis), padded.take(range(1, n + 1), axis)),
-            padded.take(range(2, n + 2), axis),
-        )
-    return (volume == peak) & np.isfinite(volume)
-
-
-def _greedy_nms(found: pd.DataFrame, max_iou: float) -> list[int]:
-    """Indices of rows (sorted best first) that overlap no better row by more than max_iou."""
-    x, y, r = (found[c].to_numpy() for c in ("x_px", "y_px", "r_px"))
-    keep: list[int] = []
-    for i in range(len(found)):
-        if not keep or circle_iou(x[i], y[i], r[i], x[keep], y[keep], r[keep]).max() <= max_iou:
-            keep.append(i)
-    return keep

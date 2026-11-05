@@ -128,6 +128,28 @@ def test_two_output_training_ensemble_and_large_sources(tiles_dir, tmp_path):
     assert detector(dem, SCALE_M)["score"].is_monotonic_decreasing
 
 
+def test_large_checkpoint_supplies_only_the_large_output(tiles_dir, tmp_path):
+    def trained(name, *extra):
+        out = tmp_path / name
+        train_unet.main(
+            [str(tiles_dir), "--out", str(out), "--epochs", "1", "--batch-size", "2",
+             "--base", "4", "--depth", "3", "--device", "cpu", *extra]
+        )  # fmt: skip
+        return str(out / "best.pt")
+
+    one = trained("one")
+    two = trained("two", "--large-min-diam", "1.5", "--large-level", "2")
+    dem = np.random.default_rng(0).normal(size=(32, 32)).astype(np.float32)
+
+    prob = UNetDetector(checkpoint=one, large_checkpoint=two).rim_maps(dem)
+    assert prob.shape == (2, 32, 32)
+    assert prob[0] == pytest.approx(predict_rims([load_model(one)], dem)[0])
+    assert prob[1] == pytest.approx(predict_rims([load_model(two)], dem)[1])
+
+    with pytest.raises(ValueError, match="large-rim output"):
+        UNetDetector(checkpoint=two, large_checkpoint=one).rim_maps(dem)
+
+
 def test_size_gated_circles_use_each_source_on_its_side():
     size = 128
     yy, xx = np.mgrid[0:size, 0:size].astype(float)

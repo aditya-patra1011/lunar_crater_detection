@@ -17,7 +17,7 @@ from lunar_crater.postprocess.rings import RingMatcher
 from lunar_crater.training.data import normalize_dem
 
 
-@lru_cache(maxsize=4)
+@lru_cache(maxsize=8)
 def load_model(checkpoint: str, device: str = "cpu") -> UNet:
     """Load a ``best.pt`` written by ``lunar_crater.training.train_unet``."""
     state = torch.load(checkpoint, map_location=device, weights_only=True)
@@ -46,10 +46,12 @@ class UNetDetector:
     leaves them to the main rim map. ``"head"`` matches rings on the network's large-rim
     output, and ``"classical"`` runs the radial-slope filter. Their scores are multiplied
     by ``large_gain``, to share one threshold with the main map, and ``large_radius_scale``
-    corrects their radii.
+    corrects their radii. ``large_checkpoint`` takes the large-rim output from other
+    models, again joined by commas, leaving ``checkpoint`` to supply only the main map.
     """
 
     checkpoint: str = ""
+    large_checkpoint: str = ""
     device: str = "cpu"
     min_radius_px: float = 4.0
     max_radius_px: float = 100.0
@@ -76,15 +78,29 @@ class UNetDetector:
             raise ValueError("set checkpoint=<path to best.pt>")
         return [load_model(path, self.device) for path in self.checkpoint.split(",")]
 
+    def rim_maps(self, dem: np.ndarray) -> np.ndarray:
+        """Rim maps for one tile, (channels, h, w), from the configured models."""
+        prob = predict_rims(self.models(), dem, self.device)
+        if not self.large_checkpoint:
+            return prob
+        models = [load_model(path, self.device) for path in self.large_checkpoint.split(",")]
+        large = predict_rims(models, dem, self.device)
+        if len(large) < 2:
+            raise ValueError("large_checkpoint needs models with a large-rim output")
+        return np.stack([prob[0], large[1]])
+
     def __call__(self, dem: np.ndarray, scale_m: float) -> pd.DataFrame:
-        return self.circles(predict_rims(self.models(), dem, self.device), dem, scale_m)
+        return self.circles(self.rim_maps(dem), dem, scale_m)
 
     def circles(self, prob: np.ndarray, dem: np.ndarray, scale_m: float) -> pd.DataFrame:
         """Circles from (channels, h, w) rim maps; ``dem`` is used by the classical source."""
-        matcher = self.matcher()
         if self.large_source == "none":
-            return matcher(prob[0])
+            return self.matcher()(prob[0])
+        return self.merge(*self.parts(prob, dem, scale_m))
 
+    def parts(self, prob: np.ndarray, dem: np.ndarray, scale_m: float):
+        """Circles below and above ``large_from_km``, before they are merged."""
+        matcher = self.matcher()
         cut_px = self.large_from_km * 1000 / 2 / scale_m
         small = replace(matcher, max_radius_px=cut_px / self.radius_scale)(prob[0])
         if self.large_source == "head":
@@ -108,7 +124,10 @@ class UNetDetector:
             )(dem, scale_m)
         else:
             raise ValueError(f"unknown large_source {self.large_source!r}")
+        return small, large
 
+    def merge(self, small: pd.DataFrame, large: pd.DataFrame) -> pd.DataFrame:
+        """Put both sizes on one score scale, using ``large_gain``, and thin overlaps."""
         large = large.assign(score=large["score"] * self.large_gain)
         found = pd.concat([small, large], ignore_index=True)
         found = found.sort_values("score", ascending=False, ignore_index=True)

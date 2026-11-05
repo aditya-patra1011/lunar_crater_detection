@@ -48,20 +48,30 @@ def rim_target(
 def augment(image: np.ndarray, target: np.ndarray, rng: np.random.Generator):
     """The same random rotation by a multiple of 90 degrees and flip, applied to both.
 
-    Craters have no preferred direction, and these moves keep pixels on the grid, so the
-    target stays exact.
+    The target may have leading channels. Craters have no preferred direction, and these
+    moves keep pixels on the grid, so the target stays exact.
     """
     k = int(rng.integers(4))
-    image, target = np.rot90(image, k), np.rot90(target, k)
+    image, target = np.rot90(image, k, axes=(-2, -1)), np.rot90(target, k, axes=(-2, -1))
     if rng.random() < 0.5:
-        image, target = image[:, ::-1], target[:, ::-1]
+        image, target = image[..., ::-1], target[..., ::-1]
     return np.ascontiguousarray(image), np.ascontiguousarray(target)
 
 
 def load_examples(
-    tiles_dir, tiles: pd.DataFrame, craters: pd.DataFrame, *, thickness_px: float = 2.0
+    tiles_dir,
+    tiles: pd.DataFrame,
+    craters: pd.DataFrame,
+    *,
+    thickness_px: float = 2.0,
+    large_min_diam_km: float = 0.0,
+    large_thickness_px: float = 4.0,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Normalized float32 inputs and uint8 rim targets, each shaped (n, size, size)."""
+    """Normalized float32 inputs (n, size, size) and uint8 targets (n, channels, size, size).
+
+    Channel 0 holds all rims. If ``large_min_diam_km`` is set, channel 1 holds only rims
+    of craters at least that wide, drawn ``large_thickness_px`` wide.
+    """
     by_tile = dict(tuple(craters.groupby("tile_id")))
     empty = craters.iloc[:0]
     images, targets = [], []
@@ -69,6 +79,13 @@ def load_examples(
         with np.load(tiles_dir / "tiles" / f"{t.tile_id}.npz") as z:
             images.append(normalize_dem(z["dem"]))
         rows = by_tile.get(t.tile_id, empty)
-        target = rim_target(rows, int(t.size_px), thickness_px=thickness_px)
-        targets.append(target.astype(np.uint8))
+        size = int(t.size_px)
+        channels = [rim_target(rows, size, thickness_px=thickness_px)]
+        if large_min_diam_km:
+            channels.append(
+                rim_target(
+                    rows, size, thickness_px=large_thickness_px, min_diam_km=large_min_diam_km
+                )
+            )
+        targets.append(np.stack(channels).astype(np.uint8))
     return np.stack(images), np.stack(targets)

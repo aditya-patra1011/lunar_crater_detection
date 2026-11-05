@@ -118,10 +118,11 @@ def sweep(preds, tiles, craters, thresholds, **kwargs) -> pd.DataFrame:
 
 
 def default_thresholds(scores: pd.Series, n: int = 20) -> list[float]:
-    """``n`` thresholds from keeping every detection up to keeping the top 5%."""
+    """``n`` thresholds from keeping every detection to the top 5%, then finer to the top 0.5%."""
     if scores.empty:
         return [-np.inf]
-    return np.unique(np.quantile(scores, np.linspace(0, 0.95, n))).tolist()
+    steps = np.concatenate([np.linspace(0, 0.95, n), [0.96, 0.97, 0.98, 0.99, 0.995]])
+    return np.unique(np.quantile(scores, steps)).tolist()
 
 
 def best_threshold(curve: pd.DataFrame) -> float:

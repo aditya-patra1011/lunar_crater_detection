@@ -135,3 +135,10 @@ def test_main_writes_results(tiles_dir, tmp_path, monkeypatch):
 def test_main_refuses_to_tune_on_test(tiles_dir, tmp_path):
     with pytest.raises(SystemExit):
         harness.main([str(tiles_dir), "--split", "test", "--out", str(tmp_path / "out")])
+
+
+def test_default_thresholds_reach_the_top_scores():
+    scores = pd.Series(np.linspace(0, 1, 1001))
+    thresholds = harness.default_thresholds(scores)
+    assert thresholds[0] == 0.0
+    assert thresholds[-1] == pytest.approx(0.995)

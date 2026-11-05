@@ -16,7 +16,7 @@ Landing-site assessment, terrain-relative navigation and surface dating all need
 
 1. Tile LOLA elevation data and rasterize crater labels from the Robbins catalog.
 2. Split by geography (blocked regions with a buffer), not by random tiles.
-3. Train a classical baseline, a U-Net, a multi-scale U-Net and an object detector.
+3. Train a classical baseline, a U-Net and a multi-scale U-Net.
 4. Convert predictions to georeferenced craters (latitude, longitude, diameter).
 5. Evaluate by crater size against the catalog, with a manual audit of false positives.
 6. Export to ONNX, serve with FastAPI, and monitor input and prediction drift.
@@ -51,3 +51,9 @@ pytest
 - [x] Improved models and ensemble
 - [ ] Post-processing, ONNX export and FastAPI service
 - [ ] Drift monitoring, model card and final write-up
+
+## Later development
+
+Not needed to complete the project:
+
+- Object detector

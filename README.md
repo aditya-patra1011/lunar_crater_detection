@@ -57,3 +57,6 @@ pytest
 Not needed to complete the project:
 
 - Object detector
+- Retraining so the large-crater output does not weaken small craters
+- Better recall on 1-2 km craters
+- Finding craters over 32 km, which needs bigger tiles

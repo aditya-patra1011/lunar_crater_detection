@@ -82,6 +82,7 @@ def export(
         output_names=["rims"],
         dynamo=True,
         external_data=False,
+        verbose=False,
     )
 
     session = onnxruntime.InferenceSession(str(onnx_path), providers=["CPUExecutionProvider"])

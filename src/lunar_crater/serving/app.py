@@ -75,6 +75,8 @@ def create_app(predictor: CraterPredictor | None = None) -> FastAPI:
     """Build the API around ``predictor``, or the model at ``LUNAR_MODEL``."""
     if predictor is None:
         predictor = CraterPredictor(Path(os.environ.get("LUNAR_MODEL", DEFAULT_MODEL)))
+    # The first tile builds the ring kernels, which takes far longer than later tiles.
+    predictor(np.zeros((predictor.size_px, predictor.size_px), np.float32), 0.0, 0.0)
     # Room for the largest numeric .npy of this shape (float64) and its header.
     max_bytes = predictor.size_px**2 * 8 + 1024
     app = FastAPI(title="Lunar crater detection", version=__version__)

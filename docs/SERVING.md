@@ -1,6 +1,6 @@
 # Serving
 
-The API takes one elevation tile and returns its craters, with positions in tile pixels and on the Moon. It runs the networks with ONNX Runtime, so it does not need PyTorch.
+The API takes one elevation tile and returns its craters, with positions in tile pixels and on the Moon. It runs the networks with ONNX Runtime, so it does not need PyTorch. A dashboard at its home page explains the project and runs the model live.
 
 ## The served model
 
@@ -32,7 +32,13 @@ This writes `models/crater_detector.onnx` (63 MB) and `models/crater_detector.js
 uvicorn --factory lunar_crater.serving.app:create_app
 ```
 
-It loads `models/crater_detector.onnx`, or the path in the `LUNAR_MODEL` environment variable, and refuses to start if the file does not match its checksum. Startup takes a few seconds, because it runs one tile in advance so the first request is not slow. Interactive docs are at http://localhost:8000/docs.
+It loads `models/crater_detector.onnx`, or the path in the `LUNAR_MODEL` environment variable, and refuses to start if the file does not match its checksum. Startup takes a few seconds, because it runs one tile in advance so the first request is not slow.
+
+## The dashboard
+
+Open http://localhost:8000/ for a page that explains the problem, the approach and the results in plain language, with a chart of scores by crater size. Its "Try it" panel runs the model live on eight test tiles and draws three kinds of circle on the terrain: detections that match a catalog crater, detections not in the catalog, and catalog craters the model missed. A "Rim map" view shows what the networks see before circles are fitted. Visitors can also upload their own `.npy` tile.
+
+The example tiles come from the tile set in `data/interim/tiles/v1`, or the folder in the `LUNAR_TILES` environment variable. Without it, the dashboard still works but offers only uploads. Interactive API docs are at http://localhost:8000/docs.
 
 ## Send a tile
 
@@ -62,7 +68,7 @@ In PowerShell, write `curl.exe` instead of `curl`. Add `-F min_score=0.6` to kee
 }
 ```
 
-`model_id` is the start of the ONNX file's checksum, so results can be traced to a model. `GET /health` returns it with the expected tile size and scale.
+`model_id` is the start of the ONNX file's checksum, so results can be traced to a model. `GET /health` returns it with the expected tile size and scale. `GET /samples` lists the dashboard's example tiles, and `GET /samples/{tile_id}` runs one and marks each detection against the catalog.
 
 ## Limits
 

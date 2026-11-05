@@ -31,11 +31,18 @@ def pick_device(name: str) -> torch.device:
     return torch.device(name)
 
 
-def load_split_examples(tiles_dir: Path, split: str, thickness_px: float, limit: int | None):
-    tiles, craters = load_split(tiles_dir, split)
-    if limit:
-        tiles = tiles.head(limit)
-    return load_examples(tiles_dir, tiles, craters, thickness_px=thickness_px)
+def load_split_examples(args: argparse.Namespace, split: str):
+    tiles, craters = load_split(args.tiles_dir, split)
+    if args.limit:
+        tiles = tiles.head(args.limit)
+    return load_examples(
+        args.tiles_dir,
+        tiles,
+        craters,
+        thickness_px=args.thickness,
+        large_min_diam_km=args.large_min_diam,
+        large_thickness_px=args.large_thickness,
+    )
 
 
 def batches(n: int, size: int, rng: np.random.Generator | None):
@@ -46,7 +53,7 @@ def batches(n: int, size: int, rng: np.random.Generator | None):
 
 def to_tensors(images, targets, device):
     x = torch.from_numpy(np.ascontiguousarray(images)).unsqueeze(1).to(device)
-    y = torch.from_numpy(np.ascontiguousarray(targets)).float().unsqueeze(1).to(device)
+    y = torch.from_numpy(np.ascontiguousarray(targets)).float().to(device)
     return x, y
 
 
@@ -86,19 +93,24 @@ def train(args: argparse.Namespace) -> pd.DataFrame:
     device = pick_device(args.device)
     log(f"device: {device}")
 
-    train_x, train_y = load_split_examples(args.tiles_dir, "train", args.thickness, args.limit)
-    val_x, val_y = load_split_examples(args.tiles_dir, "val", args.thickness, args.limit)
-    log(f"train {len(train_x)} tiles, val {len(val_x)} tiles, rim pixels {train_y.mean():.3%}")
+    train_x, train_y = load_split_examples(args, "train")
+    val_x, val_y = load_split_examples(args, "val")
+    rim_share = train_y.mean(axis=(0, 2, 3))
+    log(f"train {len(train_x)} tiles, val {len(val_x)} tiles, rim pixels {rim_share.round(4)}")
 
-    model = UNet(base=args.base, depth=args.depth).to(device)
+    large_level = args.large_level if args.large_min_diam else 0
+    model_config = {"base": args.base, "depth": args.depth, "large_level": large_level}
+    model = UNet(**model_config).to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     schedule = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs)
     scaler = torch.amp.GradScaler(device.type, enabled=device.type == "cuda")
     config = {
-        "model": {"base": args.base, "depth": args.depth},
+        "model": model_config,
         "data": {
             "tiles_dir": str(args.tiles_dir),
             "thickness_px": args.thickness,
+            "large_min_diam_km": args.large_min_diam,
+            "large_thickness_px": args.large_thickness,
             "min_spread_m": MIN_SPREAD_M,
         },
         "train": {
@@ -150,6 +162,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--base", type=int, default=32, help="channels at full resolution")
     parser.add_argument("--depth", type=int, default=4, help="number of downsamplings")
     parser.add_argument("--thickness", type=float, default=2.0, help="rim width in pixels")
+    parser.add_argument(
+        "--large-min-diam",
+        type=float,
+        default=0.0,
+        help="add a second output for craters at least this wide, in km (0: one output)",
+    )
+    parser.add_argument("--large-thickness", type=float, default=4.0, help="large rim width, px")
+    parser.add_argument(
+        "--large-level", type=int, default=2, help="downsamplings at the large output"
+    )
     parser.add_argument("--limit", type=int, help="use only the first N tiles of each split")
     parser.add_argument("--device", default="auto")
     parser.add_argument("--seed", type=int, default=0)

@@ -59,6 +59,9 @@ def test_load_examples(tmp_path):
     )
     images, targets = load_examples(tmp_path, tiles, craters)
 
-    assert images.shape == targets.shape == (2, 32, 32)
+    assert images.shape == (2, 32, 32) and targets.shape == (2, 1, 32, 32)
     assert targets.dtype == np.uint8
     assert targets[0].sum() > 0 and targets[1].sum() == 0
+
+    _, both = load_examples(tmp_path, tiles, craters, large_min_diam_km=5.0)
+    assert both.shape == (2, 2, 32, 32) and both[0, 0].sum() > 0 and both[0, 1].sum() == 0

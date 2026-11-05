@@ -6,6 +6,9 @@ on val tiles at its best threshold. Test tiles are never touched.
 Usage::
 
     python scripts/tune_unet.py data/interim/tiles/v1 models/unet_v1/best.pt out.csv
+
+Several checkpoints joined by commas are averaged. Only the main rim map is used here;
+``scripts/tune_large.py`` then chooses what finds the large craters.
 """
 
 from __future__ import annotations
@@ -25,12 +28,12 @@ from lunar_crater.models.detector import load_model, predict_rims
 from lunar_crater.postprocess.rings import RingMatcher
 
 
-def rim_maps(tiles_dir: Path, tiles: pd.DataFrame, checkpoint: Path) -> list[np.ndarray]:
-    model = load_model(str(checkpoint))
+def rim_maps(tiles_dir: Path, tiles: pd.DataFrame, checkpoints: str) -> list[np.ndarray]:
+    models = [load_model(path) for path in checkpoints.split(",")]
     maps = []
     for t in tiles.itertuples():
         with np.load(tiles_dir / "tiles" / f"{t.tile_id}.npz") as z:
-            maps.append(predict_rims(model, z["dem"]).astype(np.float32))
+            maps.append(predict_rims(models, z["dem"])[0].astype(np.float32))
     return maps
 
 
@@ -47,7 +50,7 @@ def match_all(tiles, maps, matcher, pool) -> pd.DataFrame:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("tiles_dir", type=Path)
-    parser.add_argument("checkpoint", type=Path)
+    parser.add_argument("checkpoint", help="best.pt, or several joined by commas")
     parser.add_argument("out", type=Path, help="CSV of val results per setting")
     parser.add_argument("--train-tiles", type=int, default=200)
     parser.add_argument("--val-tiles", type=int, default=150)

@@ -2,6 +2,13 @@
 
 Scores are on tile set v1 with split seed 122, under the protocol in [EVALUATION.md](EVALUATION.md). Settings were tuned on train and val only, and each final setting was run on test once.
 
+| detector | test recall | test precision | test F1 |
+| --- | --- | --- | --- |
+| Classical radial-slope filter | 0.391 | 0.350 | 0.369 |
+| **U-Net with ring matching** | 0.423 | 0.718 | **0.533** |
+
+The U-Net is better overall and up to 8 km. The classical filter is still better on craters over 8 km.
+
 ## Classical: radial-slope matched filter
 
 `lunar_crater.baselines.classical.RadialSlopeDetector`, with no learning and numpy only.
@@ -47,7 +54,70 @@ Scores are on tile set v1 with split seed 122, under the protocol in [EVALUATION
 
 Test precision is lower than on val (0.35 against 0.41) while recall is the same. Val was used to pick the threshold, so a small drop is expected. Any learned model has to beat **0.369 test F1** to justify itself.
 
+## U-Net with ring matching
+
+`lunar_crater.models.detector.UNetDetector`: a U-Net predicts a rim probability for each pixel, and `lunar_crater.postprocess.rings.RingMatcher` turns the map into circles.
+
+**Network and training.** A 4-level U-Net with bilinear upsampling and 7.8M parameters. The input is the tile's heights, centred on the tile median and scaled by the tile spread (with a 50 m floor). The target is every catalog rim of at least 1 km, drawn 2 px wide, which is 5.3% of pixels. Training used BCE plus soft Dice, AdamW (learning rate 0.001) with a cosine schedule, batches of 16, and random 90 degree rotations and flips, for 40 epochs on the 2,071 train tiles. It took about 21 minutes on a Colab T4 GPU. Val loss fell almost to the end, with the best at epoch 40 (0.892, train 0.864), so the network was not overfitting and might gain from longer training. This is one run with one seed, so the spread between training runs is not known.
+
+**Ring matching.** For each centre and radius, the score is the mean probability on a ring minus the mean inside it. The subtraction rejects diffuse blobs, which would otherwise score highly at many positions.
+
+**Tuning.**
+
+1. **Radius scale, on train.** Radii come out about 7% small, far less than the classical filter's 23%. On 200 train tiles the fitted scale is 1.072.
+2. **Matching, on 150 val tiles.** A grid over ring width (2 px, or 10% or 20% of the radius), NMS overlap (0.1, 0.3) and a size exponent (0, 0.5, 1) that raises the scores of large circles. The top eight settings all score F1 0.550-0.556, so matching has little left to give. The best is a width of 20%, NMS 0.1 and exponent 0.5. Its gain over no size correction (0.552) is too small to mean much.
+3. **Threshold, on all val.** F1 is flat at 0.560 between scores of 0.42 and 0.44, and 0.43 was fixed.
+
+**Results** (min_score 0.43):
+
+| diameter (km) | val recall | val precision | val F1 | test recall | test precision | test F1 | classical test F1 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 1-2 | 0.433 | 0.751 | 0.549 | 0.384 | 0.742 | 0.506 | 0.355 |
+| 2-4 | 0.533 | 0.737 | 0.619 | 0.537 | 0.738 | 0.621 | 0.382 |
+| 4-8 | 0.496 | 0.624 | 0.552 | 0.510 | 0.645 | 0.569 | 0.448 |
+| 8-16 | 0.357 | 0.439 | 0.394 | 0.368 | 0.411 | 0.388 | 0.456 |
+| 16-32 | 0.190 | 0.175 | 0.182 | 0.294 | 0.337 | 0.314 | 0.476 |
+| 32 and over | 0.000 | – | – | 0.000 | – | – | – |
+| **all** | **0.459** | **0.718** | **0.560** | **0.423** | **0.718** | **0.533** | **0.369** |
+
+**Is the difference real?** Bootstrap 95% intervals for U-Net F1 minus classical F1 on test (`scripts/compare_runs.py`). Tiles in one region share terrain, so the region intervals are the fairer test, though 7 regions is few:
+
+| craters | U-Net F1 | classical F1 | resampling tiles | resampling the 7 regions |
+| --- | --- | --- | --- | --- |
+| all | 0.533 | 0.369 | +0.15 to +0.18 | +0.10 to +0.24 |
+| 1-8 km | 0.538 | 0.368 | +0.15 to +0.19 | +0.10 to +0.25 |
+| over 8 km | 0.351 | 0.443 | -0.14 to -0.05 | -0.17 to +0.02 |
+
+The overall gain holds under both tests. The classical lead over 8 km is clear across tiles but not conclusive across regions.
+
+![U-Net detections on four val tiles](figures/unet_val.png)
+
+**What it gets wrong.**
+
+- **Large craters.** This is the main weakness. Large rims are predicted less completely, and the matcher can build a large false circle from arcs of several smaller rims (the big red dashed circles in the figure). Only 319 test craters are over 8 km, so these bins move little in the overall score.
+- **Craters over 32 km.** None were found. Like the classical filter, the matcher tries radii only up to 100 px, and most of these rims are cut by the tile edge.
+- **Missed small craters.** Recall on 1-2 km craters is 0.38 on test, the largest source of missed craters. Precision there is 0.74, and it is a lower bound because the catalog is least complete at that size.
+- **Test against val.** Test F1 is 0.027 below val, mostly from recall on 1-2 km craters (0.384 against 0.433). The two splits cover different regions, so this may be terrain rather than overfitting. The 16-32 km row differs in the other direction, but it has under 100 craters per split.
+
+The next models have **0.533 test F1** to beat, and large craters are the clearest place to gain. Test has now been used once for each of these two detectors.
+
 ## Reproduce
+
+Training needs a GPU: pack the tiles with `python scripts/pack_tiles.py data/interim/tiles/v1 data/processed/lunar_tiles_v1.zip`, upload the zip to `MyDrive/lunar_crater/` in Google Drive, and run [notebooks/train_unet_colab.ipynb](../notebooks/train_unet_colab.ipynb) on Colab. Put the resulting `best.pt`, `config.json` and `history.csv` in `models/unet_v1/`. Weights are not stored in this repository.
+
+```bash
+python scripts/tune_unet.py data/interim/tiles/v1 models/unet_v1/best.pt outputs/tune_unet.csv
+python -m lunar_crater.evaluation.harness data/interim/tiles/v1 --split val --detector unet --workers 5 \
+    --set checkpoint=models/unet_v1/best.pt thickness_frac=0.2 nms_iou=0.1 size_exponent=0.5 radius_scale=1.072 \
+    --out outputs/unet_v1_val
+python -m lunar_crater.evaluation.harness data/interim/tiles/v1 --split test --detector unet --workers 5 \
+    --set checkpoint=models/unet_v1/best.pt thickness_frac=0.2 nms_iou=0.1 size_exponent=0.5 radius_scale=1.072 \
+    --min-score 0.43 --out outputs/unet_v1_test
+python scripts/compare_runs.py data/interim/tiles/v1 outputs/unet_v1_test outputs/classical_v1_test
+python scripts/plot_detections.py data/interim/tiles/v1 outputs/unet_v1_val docs/figures/unet_val.png --min-score 0.43
+```
+
+For the classical filter:
 
 ```bash
 python scripts/tune_classical.py data/interim/tiles/v1 outputs/tune_classical.csv --workers 6

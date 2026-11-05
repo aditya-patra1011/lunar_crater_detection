@@ -30,6 +30,9 @@ version = { attr = "lunar_crater.__version__" }
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+"lunar_crater.serving" = ["static/*"]
+
 [tool.ruff]
 line-length = 100
 src = ["src", "tests"]

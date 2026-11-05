@@ -4,7 +4,8 @@ Usage::
 
     uvicorn --factory lunar_crater.serving.app:create_app
 
-The model path comes from the ``LUNAR_MODEL`` environment variable. Interactive docs are
+The model path comes from the ``LUNAR_MODEL`` environment variable, and example tiles
+for the dashboard from ``LUNAR_TILES``. The dashboard is at ``/`` and interactive API docs
 at ``/docs``.
 """
 
@@ -18,13 +19,17 @@ from typing import Annotated
 
 import numpy as np
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel
 
 from lunar_crater import __version__
 from lunar_crater.data.projection import wrap_longitude
 from lunar_crater.serving.predictor import CraterPredictor
+from lunar_crater.serving.samples import SampleTiles
 
 DEFAULT_MODEL = "models/crater_detector.onnx"
+DEFAULT_TILES = "data/interim/tiles/v1"
+STATIC = Path(__file__).parent / "static"
 #: Tiles above this share of missing heights are refused, since the model did not see them.
 MAX_MISSING = 0.5
 
@@ -71,15 +76,46 @@ def read_tile(data: bytes, size_px: int) -> np.ndarray:
     return dem
 
 
-def create_app(predictor: CraterPredictor | None = None) -> FastAPI:
-    """Build the API around ``predictor``, or the model at ``LUNAR_MODEL``."""
+def create_app(predictor: CraterPredictor | None = None, tiles_dir: Path | None = None) -> FastAPI:
+    """Build the API around ``predictor``, or the model at ``LUNAR_MODEL``.
+
+    Example tiles come from ``tiles_dir``, or ``LUNAR_TILES``; without a tile set the
+    dashboard still works, but only with uploaded tiles.
+    """
     if predictor is None:
         predictor = CraterPredictor(Path(os.environ.get("LUNAR_MODEL", DEFAULT_MODEL)))
+    if tiles_dir is None:
+        tiles_dir = Path(os.environ.get("LUNAR_TILES", DEFAULT_TILES))
+    samples = SampleTiles(tiles_dir, predictor.size_px)
+    page = (STATIC / "index.html").read_text(encoding="utf-8")
     # The first tile builds the ring kernels, which takes far longer than later tiles.
     predictor(np.zeros((predictor.size_px, predictor.size_px), np.float32), 0.0, 0.0)
     # Room for the largest numeric .npy of this shape (float64) and its header.
     max_bytes = predictor.size_px**2 * 8 + 1024
     app = FastAPI(title="Lunar crater detection", version=__version__)
+
+    @app.get("/", include_in_schema=False)
+    def dashboard() -> HTMLResponse:
+        return HTMLResponse(page)
+
+    @app.get("/favicon.ico", include_in_schema=False)
+    def favicon() -> FileResponse:
+        return FileResponse(STATIC / "favicon.svg", media_type="image/svg+xml")
+
+    @app.get("/samples")
+    def sample_list() -> list[dict]:
+        """Example test tiles available to the dashboard."""
+        return samples.listing()
+
+    @app.get("/samples/{tile_id}")
+    def sample(tile_id: str) -> dict:
+        """Detections on one example tile, marked against the catalog."""
+        if tile_id not in samples:
+            raise HTTPException(404, f"no example tile {tile_id!r}")
+        start = time.perf_counter()
+        result = samples.run(tile_id, predictor)
+        return {**result, "model_id": predictor.model_id, "min_score": predictor.min_score,
+                "seconds": time.perf_counter() - start}  # fmt: skip
 
     @app.get("/health")
     def health() -> Health:

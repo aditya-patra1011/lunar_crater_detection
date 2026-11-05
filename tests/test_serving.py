@@ -1,3 +1,4 @@
+import base64
 import io
 import json
 
@@ -57,8 +58,35 @@ def predictor(built):
 
 
 @pytest.fixture(scope="module")
-def client(predictor):
-    return TestClient(create_app(predictor))
+def tiles_dir(tmp_path_factory):
+    """Three test tiles with one bowl each, and a train tile the dashboard must skip."""
+    folder = tmp_path_factory.mktemp("tiles")
+    (folder / "tiles").mkdir()
+    yy, xx = np.mgrid[0:SIZE, 0:SIZE]
+    tiles, splits, craters = [], [], []
+    for i, split in enumerate(["test", "test", "test", "train"]):
+        tile_id = f"t{i}"
+        d = np.hypot(xx - 30, yy - 32) / 12
+        dem = np.where(d < 1, 600 * (d**2 - 1), 0.0).astype(np.float32)
+        np.savez(folder / "tiles" / f"{tile_id}.npz", dem=dem, mask=np.zeros_like(dem))
+        tiles.append({"tile_id": tile_id, "lat": 10.0 - i, "lon": 20.0, "size_px": SIZE,
+                      "scale_m": SCALE_M, "n_craters": 12, "nan_fraction": 0.0})  # fmt: skip
+        splits.append({"tile_id": tile_id, "cell": 0, "split": split})
+        craters += [
+            {"tile_id": tile_id, "crater_id": f"a{i}", "diam_km": 2.8, "x_px": 30.0,
+             "y_px": 32.0, "r_px": 12.0, "centre_in_tile": True},
+            {"tile_id": tile_id, "crater_id": f"b{i}", "diam_km": 0.5, "x_px": 50.0,
+             "y_px": 50.0, "r_px": 2.0, "centre_in_tile": True},
+        ]  # fmt: skip
+    pd.DataFrame(tiles).to_csv(folder / "tiles.csv", index=False)
+    pd.DataFrame(splits).to_csv(folder / "split.csv", index=False)
+    pd.DataFrame(craters).to_csv(folder / "craters.csv", index=False)
+    return folder
+
+
+@pytest.fixture(scope="module")
+def client(predictor, tiles_dir):
+    return TestClient(create_app(predictor, tiles_dir=tiles_dir))
 
 
 @pytest.fixture
@@ -156,3 +184,39 @@ def test_detect_refuses_bad_tiles(client, data, status):
 
 def test_detect_refuses_an_impossible_latitude(client, dem):
     assert post(client, as_npy(dem), lat=91.0).status_code == 422
+
+
+def test_dashboard_and_icon_are_served(client):
+    page = client.get("/")
+    assert page.status_code == 200 and "text/html" in page.headers["content-type"]
+    assert "Finding craters on the Moon" in page.text
+    icon = client.get("/favicon.ico")
+    assert icon.status_code == 200 and icon.headers["content-type"].startswith("image/svg+xml")
+
+
+def test_samples_are_test_tiles_scored_against_the_catalog(client):
+    listing = client.get("/samples").json()
+    assert sorted(t["tile_id"] for t in listing) == ["t0", "t1", "t2"]
+    assert [t["lat"] for t in listing] == sorted((t["lat"] for t in listing), reverse=True)
+
+    body = client.get("/samples/t0").json()
+    heights = np.frombuffer(base64.b64decode(body["heights"]), dtype="<f4")
+    rims = np.frombuffer(base64.b64decode(body["rims"]), dtype="u1")
+    assert heights.size == rims.size == SIZE * SIZE
+    assert heights.min() == pytest.approx(-600, abs=1)
+    # Only craters the protocol counts are shown: the 0.5 km one is left out.
+    assert [c["diam_km"] for c in body["catalog"]] == [2.8]
+    assert {"matched", "lat", "lon", "diam_km", "score"} <= set(body["detections"][0])
+    assert sum(d["matched"] for d in body["detections"]) == sum(c["found"] for c in body["catalog"])
+    assert body["model_id"] and body["seconds"] > 0
+
+
+@pytest.mark.parametrize("tile_id", ["t3", "missing", "..%2Ftiles"])
+def test_samples_refuse_other_tiles(client, tile_id):
+    assert client.get(f"/samples/{tile_id}").status_code == 404
+
+
+def test_dashboard_works_without_a_tile_set(predictor, tmp_path):
+    client = TestClient(create_app(predictor, tiles_dir=tmp_path / "none"))
+    assert client.get("/samples").json() == []
+    assert client.get("/").status_code == 200

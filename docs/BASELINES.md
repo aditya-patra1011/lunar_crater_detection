@@ -160,10 +160,10 @@ The gain over 8 km holds under both tests. The overall gain is small but consist
 - **Small craters are unchanged.** Recall on 1-2 km craters is still 0.38 on test, and they are 70% of test craters. This is now the largest gap.
 - **16-32 km is thin.** The detector makes only 20 detections in this bin on test. All 20 match, but recall is 0.28, and with 68 craters the score moves a lot on few matches. The classical filter's 0.476 is still higher in this one bin.
 - **Craters over 32 km.** None were found, for the same reason as before.
-- **Four networks for one prediction.** It runs `unet_v1` and three seeds, at about 1 s per tile with 6 workers. Averaging the large output was not compared with using one seed, so a single seed may do as well at a quarter of the cost.
+- **Four networks for one prediction.** It runs `unet_v1` and three seeds. A later val check found one seed as good as three, so the served model uses seed 0 only and scores test F1 0.539 ([SERVING.md](SERVING.md)).
 - **Possible retraining.** Training the second output without weakening the main one might beat this mix. That has not been tried.
 
-Test has now been used once for each of these three detectors.
+Test has now been used once for each of these three detectors, and once more for the served version in [SERVING.md](SERVING.md).
 
 ## Reproduce
 

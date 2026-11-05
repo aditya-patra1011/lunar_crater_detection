@@ -1,0 +1,713 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lunar Crater Detection</title>
+<link rel="icon" href="/favicon.ico" type="image/svg+xml">
+<style>
+:root {
+  color-scheme: light;
+  --bg: #f6f5f2;
+  --surface: #fcfcfb;
+  --surface-2: #f0efec;
+  --line: #e2e0da;
+  --text: #16161a;
+  --text-2: #4d4c49;
+  --muted: #74726d;
+  --accent: #2a78d6;
+  --accent-soft: #e6f0fc;
+  --s1: #2a78d6;
+  --s2: #eb6834;
+  --s3: #1baf7a;
+  --good: #0f8a3c;
+  --bad: #c43a3a;
+  --shadow: 0 1px 2px rgba(20, 20, 20, .04), 0 4px 16px rgba(20, 20, 20, .05);
+  --hero-from: #121318;
+  --hero-to: #22252e;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #111112;
+    --surface: #1a1a19;
+    --surface-2: #232321;
+    --line: #34332f;
+    --text: #f0efec;
+    --text-2: #c3c2b7;
+    --muted: #9a998f;
+    --accent: #5aa0f0;
+    --accent-soft: #1c2b3e;
+    --s1: #3987e5;
+    --s2: #d95926;
+    --s3: #199e70;
+    --good: #3fbf6a;
+    --bad: #e66767;
+    --shadow: none;
+    --hero-from: #0b0c0f;
+    --hero-to: #1a1c22;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #111112; --surface: #1a1a19; --surface-2: #232321; --line: #34332f;
+  --text: #f0efec; --text-2: #c3c2b7; --muted: #9a998f; --accent: #5aa0f0;
+  --accent-soft: #1c2b3e; --s1: #3987e5; --s2: #d95926; --s3: #199e70;
+  --good: #3fbf6a; --bad: #e66767; --shadow: none; --hero-from: #0b0c0f; --hero-to: #1a1c22;
+}
+/* Overlay colours sit on the grey terrain image, so they are the same in both themes. */
+:root { --ov-hit: #2fd08f; --ov-miss: #ffc23d; --ov-extra: #ff7aa8; --ov-new: #62b3ff; }
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--accent); }
+.wrap { max-width: 1080px; margin: 0 auto; padding: 0 16px; }
+.num { font-variant-numeric: tabular-nums; }
+
+nav.top {
+  position: sticky; top: 0; z-index: 20; background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: blur(8px); border-bottom: 1px solid var(--line);
+}
+nav.top .wrap { display: flex; align-items: center; gap: 20px; height: 52px; overflow-x: auto; }
+nav.top .brand { font-weight: 650; white-space: nowrap; display: flex; gap: 8px; align-items: center; color: var(--text); text-decoration: none; }
+nav.top .links { display: flex; gap: 18px; margin-left: auto; }
+nav.top .links a { color: var(--text-2); text-decoration: none; font-size: 14px; white-space: nowrap; }
+nav.top .links a:hover { color: var(--text); }
+
+header.hero {
+  background: radial-gradient(1200px 400px at 80% -10%, #3a3f4d 0%, transparent 60%),
+              linear-gradient(160deg, var(--hero-from), var(--hero-to));
+  color: #f2f1ee; padding: 56px 0 40px;
+}
+.hero h1 { font-size: clamp(30px, 5vw, 44px); line-height: 1.15; margin: 0 0 12px; letter-spacing: -.01em; }
+.hero p.lead { font-size: clamp(16px, 2vw, 19px); color: #c9c8c2; max-width: 720px; margin: 0 0 20px; }
+.pill {
+  display: inline-flex; align-items: center; gap: 8px; font-size: 13px;
+  padding: 4px 12px; border-radius: 999px; background: rgba(255,255,255,.08); color: #d7d6d0;
+  border: 1px solid rgba(255,255,255,.12);
+}
+.pill .dot { width: 8px; height: 8px; border-radius: 50%; background: #8a8a85; }
+.pill.ok .dot { background: #3fbf6a; }
+.pill.down .dot { background: #e66767; }
+.stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: 28px; }
+.stat { background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.1); border-radius: 14px; padding: 16px; }
+.stat .label { font-size: 13px; color: #b9b8b1; }
+.stat .value { font-size: 30px; font-weight: 650; margin: 2px 0; }
+.stat .note { font-size: 13px; color: #9f9e98; }
+
+section { padding: 56px 0 8px; }
+section h2 { font-size: 26px; margin: 0 0 6px; letter-spacing: -.01em; }
+section .kicker { font-size: 13px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--accent); margin-bottom: 6px; }
+section p.intro { color: var(--text-2); max-width: 760px; margin: 0 0 24px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 20px; box-shadow: var(--shadow); }
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+.card h3 { margin: 0 0 6px; font-size: 17px; }
+.card p, .card li { color: var(--text-2); font-size: 15px; }
+.card ul { margin: 8px 0 0; padding-left: 20px; }
+.card p { margin: 0; }
+.step-n { width: 28px; height: 28px; border-radius: 50%; background: var(--accent-soft); color: var(--accent); display: grid; place-items: center; font-weight: 700; font-size: 14px; margin-bottom: 10px; }
+
+.flow { display: flex; align-items: stretch; gap: 8px; margin-top: 16px; flex-wrap: wrap; }
+.flow .box { flex: 1 1 150px; background: var(--surface-2); border-radius: 12px; padding: 12px 14px; }
+.flow .box b { display: block; font-size: 14px; }
+.flow .box span { font-size: 13px; color: var(--muted); }
+.flow .arrow { align-self: center; color: var(--muted); font-size: 18px; }
+
+.metric-key { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 16px; }
+.metric-key .card .big { font-size: 28px; font-weight: 650; }
+
+.chart-card { position: relative; }
+.chart-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; margin-bottom: 8px; }
+.legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 13px; color: var(--text-2); }
+.legend .sw { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+#chart svg { display: block; width: 100%; height: auto; }
+#chart text { fill: var(--muted); font-size: 12px; }
+#chart .val { fill: var(--text-2); font-size: 12px; font-weight: 600; }
+.tip {
+  position: absolute; pointer-events: none; background: var(--text); color: var(--bg);
+  font-size: 13px; padding: 8px 10px; border-radius: 8px; line-height: 1.4; opacity: 0;
+  transition: opacity .1s; z-index: 5; max-width: 260px;
+}
+details.table-view { margin-top: 10px; }
+details.table-view summary { cursor: pointer; color: var(--accent); font-size: 14px; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th, td { text-align: right; padding: 7px 10px; border-bottom: 1px solid var(--line); }
+th:first-child, td:first-child { text-align: left; }
+th { color: var(--muted); font-weight: 600; font-size: 13px; }
+.findings { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px; }
+.finding { display: flex; gap: 12px; }
+.finding .ic { flex: none; width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent); font-weight: 700; }
+
+.try { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.chip {
+  border: 1px solid var(--line); background: var(--surface); color: var(--text); border-radius: 999px;
+  padding: 6px 12px; font: inherit; font-size: 13px; cursor: pointer;
+}
+.chip:hover { border-color: var(--accent); }
+.chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+.viewer { position: relative; aspect-ratio: 1; width: 100%; background: #0e0f12; border-radius: 12px; overflow: hidden; }
+.viewer canvas { width: 100%; height: 100%; display: block; }
+.viewer .empty { position: absolute; inset: 0; display: grid; place-items: center; color: #9a998f; font-size: 14px; text-align: center; padding: 24px; }
+.viewer .busy { position: absolute; inset: 0; display: none; place-items: center; background: rgba(0,0,0,.45); color: #fff; font-size: 14px; }
+.viewer.loading .busy { display: grid; }
+.toolbar { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; margin-top: 10px; font-size: 13px; color: var(--text-2); }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 9px; overflow: hidden; }
+.seg button { border: 0; background: var(--surface); color: var(--text-2); padding: 5px 10px; font: inherit; font-size: 13px; cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.seg button:disabled { opacity: .45; cursor: not-allowed; }
+.key { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; user-select: none; }
+.key svg { flex: none; }
+.summary-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 12px; }
+.mini { background: var(--surface-2); border-radius: 12px; padding: 10px 12px; }
+.mini .v { font-size: 22px; font-weight: 650; }
+.mini .l { font-size: 12px; color: var(--muted); }
+.list { max-height: 330px; overflow: auto; border: 1px solid var(--line); border-radius: 12px; }
+.list table th { position: sticky; top: 0; background: var(--surface); }
+.list table { font-size: 13px; }
+.list th, .list td { white-space: nowrap; padding: 7px 8px; }
+.tag { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; white-space: nowrap; }
+.tag i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.upload { margin-top: 16px; }
+.upload form { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.upload label { font-size: 13px; color: var(--text-2); display: grid; gap: 4px; }
+.upload input { font: inherit; font-size: 14px; padding: 7px 9px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--text); }
+.upload .full { grid-column: 1 / -1; }
+button.primary { background: var(--accent); color: #fff; border: 0; border-radius: 9px; padding: 9px 14px; font: inherit; font-weight: 600; cursor: pointer; }
+.error { color: var(--bad); font-size: 14px; margin-top: 8px; min-height: 1em; }
+.hint { font-size: 13px; color: var(--muted); }
+footer { padding: 48px 0 40px; color: var(--muted); font-size: 13px; }
+footer .wrap { border-top: 1px solid var(--line); padding-top: 20px; display: flex; flex-wrap: wrap; gap: 8px 24px; justify-content: space-between; }
+
+@media (max-width: 860px) {
+  .stats, .grid-4 { grid-template-columns: 1fr 1fr; }
+  .grid-2, .findings, .try, .metric-key { grid-template-columns: 1fr; }
+  nav.top .links { gap: 14px; }
+}
+@media (max-width: 640px) {
+  nav.top .links a:not(.keep) { display: none; }
+}
+@media (max-width: 480px) {
+  .stats { grid-template-columns: 1fr 1fr; }
+  .stat .value { font-size: 24px; }
+  .grid-4 { grid-template-columns: 1fr; }
+  .summary-row { grid-template-columns: 1fr 1fr 1fr; }
+  .upload form { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<nav class="top"><div class="wrap">
+  <a class="brand" href="#"><img src="/favicon.ico" width="20" height="20" alt="">Lunar Crater Detection</a>
+  <div class="links">
+    <a href="#problem">Problem</a><a href="#approach">Approach</a><a href="#results">Results</a><a class="keep" href="#try">Try it</a><a href="#limits">Limits</a><a class="keep" href="/docs">API</a>
+  </div>
+</div></nav>
+
+<header class="hero"><div class="wrap">
+  <span class="pill" id="health"><span class="dot"></span><span>Checking the model…</span></span>
+  <h1 style="margin-top:16px">Finding craters on the Moon from height maps</h1>
+  <p class="lead">A model that reads elevation data from NASA's Lunar Reconnaissance Orbiter and marks every crater it finds, with its position on the Moon and its size. It is tested only on regions of the Moon it never saw during training.</p>
+  <div class="stats">
+    <div class="stat"><div class="label">Overall score (F1)</div><div class="value num">0.54</div><div class="note">Up from 0.37 for the non-learning method</div></div>
+    <div class="stat"><div class="label">Catalogued craters found</div><div class="value num">43%</div><div class="note">Of 13,089 craters on unseen terrain</div></div>
+    <div class="stat"><div class="label">Detections that match the catalogue</div><div class="value num">74%</div><div class="note">Some others are likely real but uncatalogued</div></div>
+    <div class="stat"><div class="label">Time per 30 km tile</div><div class="value num">1.6 s</div><div class="note">On one laptop processor</div></div>
+  </div>
+</div></header>
+
+<main>
+<section id="problem"><div class="wrap">
+  <div class="kicker">The problem</div>
+  <h2>Why find craters automatically?</h2>
+  <p class="intro">Crater maps are used to pick safe landing sites, to help spacecraft work out where they are, and to estimate how old a surface is: older ground has collected more craters. Today's best catalogue was made largely by hand, by tracing rims on images, and that does not scale to new regions or sharper data.</p>
+  <div class="grid-2">
+    <div class="card">
+      <h3>What the model gets</h3>
+      <p>A square of terrain about 30 km across, as a grid of 256 × 256 heights, one every 118 m. Nothing else: no photos, no hints about where craters are.</p>
+      <ul><li>Craters show up as bowls with a raised rim.</li><li>Old craters are worn down and faint; new ones are sharp.</li><li>The smallest counted craters (1 km) are only about 8 pixels wide.</li></ul>
+    </div>
+    <div class="card">
+      <h3>What it must return</h3>
+      <p>Every crater it can find: its centre and radius in the tile, its latitude, longitude and diameter on the Moon, and a confidence score.</p>
+      <ul><li>Answers are checked against the Robbins catalogue of 1.3 million lunar craters.</li><li>That catalogue is incomplete for the smallest craters, so a "wrong" detection may be a real crater nobody listed.</li></ul>
+    </div>
+  </div>
+</div></section>
+
+<section id="approach"><div class="wrap">
+  <div class="kicker">Our approach</div>
+  <h2>How it was built and tested</h2>
+  <p class="intro">Each step was fixed before the next was tried, and the final scores come from test regions that no model or setting was ever tuned on.</p>
+  <div class="grid-4">
+    <div class="card"><div class="step-n">1</div><h3>Cut the Moon into tiles</h3><p>3,000 tiles at random places, each reprojected so craters stay round even near the poles, with the catalogue's craters drawn onto each one.</p></div>
+    <div class="card"><div class="step-n">2</div><h3>Keep a fair test</h3><p>Tiles were split by region, not at random: 2,071 tiles to learn from, 450 to tune on and 429 to test on, from separate parts of the Moon.</p></div>
+    <div class="card"><div class="step-n">3</div><h3>Build three detectors</h3><p>A hand-written slope filter as a baseline, then a neural network (U-Net) that learns what rims look like, then a second network just for large craters.</p></div>
+    <div class="card"><div class="step-n">4</div><h3>Score them the same way</h3><p>A detection counts as correct only if its circle overlaps a catalogue crater by at least half (IoU of 0.5 or more), each crater matched once.</p></div>
+  </div>
+  <div class="card" style="margin-top:16px">
+    <h3>What happens to one tile</h3>
+    <div class="flow">
+      <div class="box"><b>Heights</b><span>256 × 256 elevations</span></div><div class="arrow">→</div>
+      <div class="box"><b>Rim map</b><span>The networks mark how likely each pixel is to be a crater rim</span></div><div class="arrow">→</div>
+      <div class="box"><b>Circles</b><span>Rings are fitted to the rim map, and the best ones kept</span></div><div class="arrow">→</div>
+      <div class="box"><b>Craters on the Moon</b><span>Latitude, longitude, diameter and a score</span></div>
+    </div>
+  </div>
+</div></section>
+
+<section id="results"><div class="wrap">
+  <div class="kicker">The result</div>
+  <h2>How well it works on unseen terrain</h2>
+  <p class="intro">All scores below are on the 429 test tiles. F1 combines two questions into one number from 0 to 1: how many real craters did it find, and how many of its answers were right? A detector that finds everything but raises many false alarms scores low, and so does one that is always right but finds little.</p>
+  <div class="metric-key">
+    <div class="card"><div class="big num">0.54</div><h3>F1 score</h3><p>The balance of finding craters and avoiding false alarms. The non-learning baseline scores 0.37.</p></div>
+    <div class="card"><div class="big num">43%</div><h3>Recall: craters found</h3><p>Of the craters in the catalogue, the share it finds. Most of the misses are the smallest, faintest craters.</p></div>
+    <div class="card"><div class="big num">74%</div><h3>Precision: answers that match</h3><p>Of its detections, the share that match a catalogued crater. This is a floor, since the catalogue misses some real craters.</p></div>
+  </div>
+
+  <div class="card chart-card" id="chart-card">
+    <div class="chart-head">
+      <div><h3>Score by crater size</h3><p class="hint">F1 on test tiles. Higher is better. No method found craters over 32 km, which rarely fit in a 30 km tile.</p></div>
+      <div class="legend" id="legend"></div>
+    </div>
+    <div id="chart" role="img" aria-label="Grouped columns: F1 score by crater size for three detectors"></div>
+    <div class="tip" id="chart-tip"></div>
+    <details class="table-view"><summary>Show the numbers as a table</summary><div id="chart-table" style="overflow-x:auto"></div></details>
+  </div>
+
+  <div class="findings">
+    <div class="card finding"><div class="ic">1</div><div><h3>Learning beats hand-written rules</h3><p>The U-Net lifts the overall score from 0.37 to 0.53 and makes far fewer false alarms: 72% of its answers match the catalogue, against 35%.</p></div></div>
+    <div class="card finding"><div class="ic">2</div><div><h3>A second network fixed large craters</h3><p>The U-Net alone stitched arcs of small craters into fake large ones. A network trained only on craters of 6 km and wider raised the score over 8 km from 0.35 to 0.56.</p></div></div>
+    <div class="card finding"><div class="ic">3</div><div><h3>Small craters are the hard part</h3><p>Craters of 1 to 2 km are 70% of all test craters, and only 38% of them are found. This is now the biggest gap.</p></div></div>
+    <div class="card finding"><div class="ic">4</div><div><h3>The gains are real, not luck</h3><p>Re-scoring on random re-draws of the 7 test regions, the improvement over the baseline stays between +0.10 and +0.25.</p></div></div>
+  </div>
+</div></section>
+
+<section id="try"><div class="wrap">
+  <div class="kicker">Try it</div>
+  <h2>Run the model on a test tile</h2>
+  <p class="intro">Pick one of these tiles from the test regions. The model runs live and its detections are checked against the catalogue. Hover over a circle for its details.</p>
+  <div class="try">
+    <div>
+      <div class="chips" id="chips"><span class="hint">Loading example tiles…</span></div>
+      <div class="viewer" id="viewer">
+        <canvas id="canvas" width="512" height="512"></canvas>
+        <div class="empty" id="empty">Choose a tile above, or upload your own below.</div>
+        <div class="busy">Running the model…</div>
+        <div class="tip" id="tile-tip"></div>
+      </div>
+      <div class="toolbar">
+        <div class="seg" role="group" aria-label="Background">
+          <button type="button" id="view-terrain" aria-pressed="true">Terrain</button><button type="button" id="view-rims" aria-pressed="false">Rim map</button>
+        </div>
+        <label class="key"><input type="checkbox" id="show-hit" checked><svg width="22" height="10"><line x1="1" y1="5" x2="21" y2="5" stroke="var(--ov-hit)" stroke-width="2.5"/></svg>Found, matches catalogue</label>
+        <label class="key"><input type="checkbox" id="show-extra" checked><svg width="22" height="10"><line x1="1" y1="5" x2="21" y2="5" stroke="var(--ov-extra)" stroke-width="2.5" stroke-dasharray="5 3"/></svg>Found, not in catalogue</label>
+        <label class="key"><input type="checkbox" id="show-miss" checked><svg width="22" height="10"><line x1="1" y1="5" x2="21" y2="5" stroke="var(--ov-miss)" stroke-width="2.5" stroke-dasharray="1.5 3" stroke-linecap="round"/></svg>Missed catalogue crater</label>
+      </div>
+    </div>
+    <div>
+      <div class="card">
+        <div class="summary-row">
+          <div class="mini"><div class="v num" id="m-found">–</div><div class="l">catalogue craters found</div></div>
+          <div class="mini"><div class="v num" id="m-extra">–</div><div class="l">detections not in catalogue</div></div>
+          <div class="mini"><div class="v num" id="m-time">–</div><div class="l">seconds to run</div></div>
+        </div>
+        <p class="hint" id="tile-caption" style="margin-bottom:10px">Detections, most confident first.</p>
+        <div class="list"><table id="det-table"><thead><tr><th>Position</th><th>Size</th><th>Score</th><th>Catalogue</th></tr></thead><tbody></tbody></table></div>
+      </div>
+      <div class="card upload">
+        <h3>Use your own tile</h3>
+        <p class="hint" style="margin-bottom:10px">A .npy file of 256 × 256 heights in metres, 118 m apart, in the same projection as the training tiles. Your tile has no catalogue to compare with, so all detections are shown in blue.</p>
+        <form id="upload-form">
+          <label class="full">Tile file (.npy)<input type="file" id="up-file" accept=".npy" required></label>
+          <label>Centre latitude (°)<input type="number" id="up-lat" step="any" min="-90" max="90" required value="0"></label>
+          <label>Centre longitude (°)<input type="number" id="up-lon" step="any" min="-360" max="360" required value="0"></label>
+          <div class="full"><button class="primary" type="submit">Find craters</button></div>
+        </form>
+        <div class="error" id="error" role="alert"></div>
+      </div>
+    </div>
+  </div>
+</div></section>
+
+<section id="limits"><div class="wrap">
+  <div class="kicker">Limits and next steps</div>
+  <h2>What to keep in mind</h2>
+  <div class="grid-2">
+    <div class="card"><h3>Limits</h3><ul>
+      <li>It finds fewer than half of catalogued craters, and only 38% of the 1–2 km ones.</li>
+      <li>Craters wider than about 32 km are not found; they rarely fit inside one tile.</li>
+      <li>Tiles must be 256 × 256 heights, 118 m apart, prepared like the training tiles. The service checks the shape but cannot check the scale.</li>
+      <li>The test covers 7 regions of the Moon; results on other terrain may differ.</li>
+      <li>It is a research and portfolio project, not checked for landing or navigation decisions.</li>
+    </ul></div>
+    <div class="card"><h3>Still to do, and later</h3><ul>
+      <li>Watch for incoming tiles that differ from the training data (drift monitoring).</li>
+      <li>Turn scores into plain probabilities a reader can trust.</li>
+      <li>Check a sample of "not in catalogue" detections by eye to see how many are real craters.</li>
+      <li>Later: better recall on small craters, craters over 32 km, and an object-detection model.</li>
+    </ul></div>
+  </div>
+</div></section>
+</main>
+
+<footer><div class="wrap">
+  <span>Data: NASA LRO LOLA elevation (118 m), Robbins 2018 crater catalogue (USGS).</span>
+  <span id="foot-model">Model –</span>
+  <span><a href="/docs">API documentation</a> · <a href="https://github.com/aditya-patra1011/lunar_crater_detection">Source code</a></span>
+</div></footer>
+
+<script>
+"use strict";
+// Test-set results from docs/BASELINES.md and docs/SERVING.md.
+const RESULTS = {
+  bins: ["1–2 km", "2–4 km", "4–8 km", "8–16 km", "16–32 km"],
+  series: [
+    { name: "Hand-written slope filter", color: "--s1", f1: [0.355, 0.382, 0.448, 0.456, 0.476], all: 0.369 },
+    { name: "U-Net", color: "--s2", f1: [0.506, 0.621, 0.569, 0.388, 0.314], all: 0.533 },
+    { name: "U-Net + large-crater network (served)", color: "--s3", f1: [0.505, 0.624, 0.580, 0.621, 0.455], all: 0.539 },
+  ],
+  craters: [9153, 2787, 830, 223, 68],
+};
+const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+const $ = (id) => document.getElementById(id);
+const fmt = (v, d = 2) => Number(v).toFixed(d);
+const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+
+// ---------- health ----------
+fetch("/health").then((r) => r.json()).then((h) => {
+  $("health").className = "pill ok";
+  $("health").lastElementChild.textContent = `Model online · ${h.model_id}`;
+  $("foot-model").textContent = `Model ${h.model_id} · version ${h.version}`;
+}).catch(() => {
+  $("health").className = "pill down";
+  $("health").lastElementChild.textContent = "Model not reachable";
+});
+
+// ---------- chart ----------
+function drawChart() {
+  const box = $("chart");
+  const width = Math.max(300, box.clientWidth);
+  const height = 300, top = 20, bottom = 34, left = 34, right = 8;
+  const plotH = height - top - bottom, plotW = width - left - right;
+  const yMax = 0.7, ticks = [0, 0.2, 0.4, 0.6];
+  const band = plotW / RESULTS.bins.length;
+  const n = RESULTS.series.length, gap = 2;
+  const barW = Math.min(24, (band * 0.7 - gap * (n - 1)) / n);
+  const groupW = barW * n + gap * (n - 1);
+  const y = (v) => top + plotH * (1 - v / yMax);
+  let svg = `<svg viewBox="0 0 ${width} ${height}" width="${width}" height="${height}">`;
+  for (const t of ticks) {
+    svg += `<line x1="${left}" x2="${width - right}" y1="${y(t)}" y2="${y(t)}" stroke="${css("--line")}" stroke-width="1"/>`;
+    svg += `<text x="${left - 8}" y="${y(t) + 4}" text-anchor="end">${t.toFixed(1)}</text>`;
+  }
+  RESULTS.bins.forEach((bin, b) => {
+    const x0 = left + band * b + (band - groupW) / 2;
+    RESULTS.series.forEach((s, i) => {
+      const v = s.f1[b], x = x0 + i * (barW + gap), yy = y(v), h = y(0) - yy, r = Math.min(4, h);
+      const d = `M${x},${y(0)} V${yy + r} Q${x},${yy} ${x + r},${yy} H${x + barW - r} Q${x + barW},${yy} ${x + barW},${yy + r} V${y(0)} Z`;
+      svg += `<path d="${d}" fill="${css(s.color)}" data-b="${b}" data-i="${i}" class="bar"/>`;
+      if (i === n - 1) svg += `<text class="val" x="${x + barW / 2}" y="${yy - 6}" text-anchor="middle">${fmt(v)}</text>`;
+    });
+    svg += `<text x="${left + band * b + band / 2}" y="${height - 12}" text-anchor="middle">${bin}</text>`;
+    // A hit area per group, larger than the bars.
+    svg += `<rect x="${left + band * b}" y="${top}" width="${band}" height="${plotH}" fill="transparent" data-b="${b}" class="hit"/>`;
+  });
+  svg += `</svg>`;
+  box.innerHTML = svg;
+
+  const tip = $("chart-tip"), card = $("chart-card");
+  box.querySelectorAll(".hit").forEach((el) => {
+    el.addEventListener("mousemove", (e) => {
+      const b = +el.dataset.b;
+      tip.innerHTML = `<b>${RESULTS.bins[b]}</b> · ${RESULTS.craters[b].toLocaleString()} test craters<br>` +
+        RESULTS.series.map((s) => `<span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${css(s.color)};margin-right:6px"></span>${esc(s.name)}: ${fmt(s.f1[b])}`).join("<br>");
+      const rect = card.getBoundingClientRect();
+      let left = e.clientX - rect.left + 14;
+      if (left + 270 > rect.width) left = e.clientX - rect.left - 270;
+      tip.style.left = `${Math.max(8, left)}px`;
+      tip.style.top = `${e.clientY - rect.top + 12}px`;
+      tip.style.opacity = 1;
+      box.querySelectorAll(".bar").forEach((bar) => { bar.style.opacity = +bar.dataset.b === b ? 1 : 0.35; });
+    });
+    el.addEventListener("mouseleave", () => {
+      tip.style.opacity = 0;
+      box.querySelectorAll(".bar").forEach((bar) => { bar.style.opacity = 1; });
+    });
+  });
+}
+function chartLegendAndTable() {
+  $("legend").innerHTML = RESULTS.series.map((s) => `<span><span class="sw" style="background:${css(s.color)}"></span>${esc(s.name)}</span>`).join("");
+  let t = `<table><thead><tr><th>Crater size</th><th>Test craters</th>${RESULTS.series.map((s) => `<th>${esc(s.name)}</th>`).join("")}</tr></thead><tbody>`;
+  RESULTS.bins.forEach((bin, b) => { t += `<tr><td>${bin}</td><td class="num">${RESULTS.craters[b].toLocaleString()}</td>${RESULTS.series.map((s) => `<td class="num">${fmt(s.f1[b])}</td>`).join("")}</tr>`; });
+  t += `<tr><td><b>All sizes</b></td><td class="num">13,089</td>${RESULTS.series.map((s) => `<td class="num"><b>${fmt(s.all)}</b></td>`).join("")}</tr></tbody></table>`;
+  $("chart-table").innerHTML = t;
+}
+chartLegendAndTable();
+drawChart();
+let resizeTimer;
+window.addEventListener("resize", () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => { drawChart(); render(); }, 120); });
+window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { chartLegendAndTable(); drawChart(); });
+
+// ---------- tile viewer ----------
+const state = { tile: null, view: "terrain" };
+
+function b64bytes(b64) {
+  const raw = atob(b64), out = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+  return out;
+}
+
+function terrainImage(h, n, scale) {
+  // Hillshade lit from the upper left, blended with height so basins read dark.
+  let lo = Infinity, hi = -Infinity;
+  for (const v of h) { if (v < lo) lo = v; if (v > hi) hi = v; }
+  const span = Math.max(hi - lo, 1), img = new ImageData(n, n);
+  const L = [-0.6, -0.6, 0.53], exaggerate = 2.5;
+  for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) {
+    const i = r * n + c;
+    const dx = (h[r * n + Math.min(c + 1, n - 1)] - h[r * n + Math.max(c - 1, 0)]) / (2 * scale) * exaggerate;
+    const dy = (h[Math.min(r + 1, n - 1) * n + c] - h[Math.max(r - 1, 0) * n + c]) / (2 * scale) * exaggerate;
+    const norm = Math.hypot(dx, dy, 1);
+    const shade = Math.max(0, (-dx * L[0] - dy * L[1] + L[2]) / norm);
+    const v = 255 * Math.min(1, 0.72 * shade + 0.38 * (h[i] - lo) / span);
+    img.data[i * 4] = v; img.data[i * 4 + 1] = v * 0.98; img.data[i * 4 + 2] = v * 0.94; img.data[i * 4 + 3] = 255;
+  }
+  return img;
+}
+
+function rimImage(terrain, rims, n) {
+  const img = new ImageData(n, n);
+  for (let i = 0; i < n * n; i++) {
+    const p = rims[i] / 255, g = terrain.data[i * 4] * 0.35;
+    img.data[i * 4] = g * (1 - p) + 98 * p;
+    img.data[i * 4 + 1] = g * (1 - p) + 179 * p;
+    img.data[i * 4 + 2] = g * (1 - p) + 255 * p;
+    img.data[i * 4 + 3] = 255;
+  }
+  return img;
+}
+
+function shapes() {
+  const t = state.tile;
+  if (!t) return [];
+  const out = [];
+  if (t.uploaded) {
+    t.detections.forEach((d) => out.push({ ...d, kind: "new" }));
+    return out;
+  }
+  if ($("show-miss").checked) t.catalog.filter((c) => !c.found).forEach((c) => out.push({ ...c, kind: "miss" }));
+  t.detections.forEach((d) => {
+    if (d.matched && $("show-hit").checked) out.push({ ...d, kind: "hit" });
+    if (!d.matched && $("show-extra").checked) out.push({ ...d, kind: "extra" });
+  });
+  return out;
+}
+
+const STYLE = {
+  hit: { color: "--ov-hit", dash: [] },
+  extra: { color: "--ov-extra", dash: [6, 4] },
+  miss: { color: "--ov-miss", dash: [1.5, 4] },
+  new: { color: "--ov-new", dash: [] },
+};
+
+function render() {
+  const canvas = $("canvas"), t = state.tile;
+  const size = Math.round(canvas.clientWidth * (window.devicePixelRatio || 1)) || 512;
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = "#0e0f12"; ctx.fillRect(0, 0, size, size);
+  if (!t) return;
+  const base = document.createElement("canvas");
+  base.width = base.height = t.n;
+  base.getContext("2d").putImageData(state.view === "rims" && t.rimImg ? t.rimImg : t.terrainImg, 0, 0);
+  ctx.imageSmoothingEnabled = true;
+  ctx.drawImage(base, 0, 0, size, size);
+  const k = size / t.n, dpr = window.devicePixelRatio || 1;
+  ctx.lineCap = "round";
+  for (const s of shapes()) {
+    const st = STYLE[s.kind];
+    ctx.strokeStyle = css(st.color);
+    ctx.setLineDash(st.dash.map((v) => v * dpr));
+    ctx.lineWidth = (s.kind === "miss" ? 2 : 1.8) * dpr;
+    ctx.beginPath();
+    ctx.arc((s.x_px + 0.5) * k, (s.y_px + 0.5) * k, s.r_px * k, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  ctx.setLineDash([]);
+}
+
+function statusTag(d) {
+  if (state.tile.uploaded) return `<span class="tag"><i style="background:var(--ov-new)"></i>No catalogue</span>`;
+  return d.matched
+    ? `<span class="tag"><i style="background:var(--ov-hit)"></i>Listed</span>`
+    : `<span class="tag"><i style="background:var(--ov-extra)"></i>Not listed</span>`;
+}
+const latText = (v) => `${Math.abs(v).toFixed(3)}° ${v >= 0 ? "N" : "S"}`;
+const lonText = (v) => `${Math.abs(v).toFixed(3)}° ${v >= 0 ? "E" : "W"}`;
+
+function showTile(t, seconds) {
+  t.n = t.size_px;
+  t.terrainImg = terrainImage(t.heightsArr, t.n, t.scale_m);
+  t.rimImg = t.rimsArr ? rimImage(t.terrainImg, t.rimsArr, t.n) : null;
+  state.tile = t;
+  $("empty").style.display = "none";
+  $("view-rims").disabled = !t.rimImg;
+  if (!t.rimImg) setView("terrain");
+  render();
+
+  const dets = [...t.detections].sort((a, b) => b.score - a.score);
+  $("det-table").tBodies[0].innerHTML = dets.length
+    ? dets.map((d) => `<tr><td class="num">${latText(d.lat)}, ${lonText(d.lon)}</td><td class="num">${fmt(d.diam_km, 1)} km</td><td class="num">${fmt(d.score)}</td><td>${statusTag(d)}</td></tr>`).join("")
+    : `<tr><td colspan="4" class="hint">No craters above the confidence threshold.</td></tr>`;
+  $("m-time").textContent = fmt(seconds, 1);
+  if (t.uploaded) {
+    $("m-found").textContent = "–";
+    $("m-extra").textContent = "–";
+    $("tile-caption").textContent = `Your tile at ${latText(t.lat)}, ${lonText(t.lon)}: ${plural(dets.length, "crater")} found, most confident first.`;
+  } else {
+    const found = t.catalog.filter((c) => c.found).length;
+    $("m-found").textContent = `${found}/${t.catalog.length}`;
+    $("m-extra").textContent = t.detections.filter((d) => !d.matched).length;
+    $("tile-caption").textContent = `Tile ${t.tile_id} at ${latText(t.lat)}, ${lonText(t.lon)}: ${plural(dets.length, "detection")}, most confident first.`;
+  }
+}
+
+function setView(view) {
+  state.view = view;
+  $("view-terrain").setAttribute("aria-pressed", view === "terrain");
+  $("view-rims").setAttribute("aria-pressed", view === "rims");
+  render();
+}
+$("view-terrain").onclick = () => setView("terrain");
+$("view-rims").onclick = () => setView("rims");
+["show-hit", "show-extra", "show-miss"].forEach((id) => { $(id).onchange = render; });
+
+async function apiError(response) {
+  try {
+    const body = await response.json();
+    const d = body.detail;
+    if (Array.isArray(d)) return d.map((e) => `${e.loc[e.loc.length - 1]}: ${e.msg}`).join("; ");
+    return d || response.statusText;
+  } catch { return `${response.status} ${response.statusText}`; }
+}
+
+async function loadSample(id, chip) {
+  document.querySelectorAll(".chip").forEach((c) => c.setAttribute("aria-pressed", c === chip));
+  $("error").textContent = "";
+  $("viewer").classList.add("loading");
+  try {
+    const response = await fetch(`/samples/${encodeURIComponent(id)}`);
+    if (!response.ok) throw new Error(await apiError(response));
+    const t = await response.json();
+    t.heightsArr = new Float32Array(b64bytes(t.heights).buffer);
+    t.rimsArr = b64bytes(t.rims);
+    showTile(t, t.seconds);
+  } catch (e) {
+    $("error").textContent = `Could not run that tile: ${e.message}`;
+  } finally {
+    $("viewer").classList.remove("loading");
+  }
+}
+
+fetch("/samples").then((r) => r.json()).then((list) => {
+  if (!list.length) {
+    $("chips").innerHTML = `<span class="hint">No example tiles on this server (the tile set is not present). You can still upload your own.</span>`;
+    return;
+  }
+  $("chips").innerHTML = "";
+  list.forEach((t, i) => {
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "chip";
+    b.textContent = `${latText(t.lat).replace(/\.\d+/, "")}, ${lonText(t.lon).replace(/\.\d+/, "")} · ${t.n_craters} craters`;
+    b.title = `Tile ${t.tile_id}`;
+    b.onclick = () => loadSample(t.tile_id, b);
+    $("chips").appendChild(b);
+    if (i === 0) loadSample(t.tile_id, b);
+  });
+}).catch(() => { $("chips").innerHTML = `<span class="hint">Could not load example tiles.</span>`; });
+
+// Hover details for circles.
+$("canvas").addEventListener("mousemove", (e) => {
+  const tip = $("tile-tip"), t = state.tile;
+  if (!t) return;
+  const rect = e.currentTarget.getBoundingClientRect();
+  const k = rect.width / t.n, mx = e.clientX - rect.left, my = e.clientY - rect.top;
+  let best = null, bestGap = 7;
+  for (const s of shapes()) {
+    const gap = Math.abs(Math.hypot(mx - (s.x_px + 0.5) * k, my - (s.y_px + 0.5) * k) - s.r_px * k);
+    if (gap < bestGap) { best = s; bestGap = gap; }
+  }
+  if (!best) { tip.style.opacity = 0; return; }
+  const label = { hit: "Found, matches the catalogue", extra: "Found, not in the catalogue", miss: "Catalogue crater the model missed", new: "Detected" }[best.kind];
+  const where = best.lat !== undefined ? `<br>${latText(best.lat)}, ${lonText(best.lon)}` : "";
+  const score = best.score !== undefined ? ` · score ${fmt(best.score)}` : "";
+  tip.innerHTML = `<b>${label}</b><br>${fmt(best.diam_km, 1)} km across${score}${where}`;
+  let left = mx + 14;
+  if (left + 240 > rect.width) left = mx - 240;
+  tip.style.left = `${Math.max(6, left)}px`;
+  tip.style.top = `${Math.min(my + 12, rect.height - 70)}px`;
+  tip.style.opacity = 1;
+});
+$("canvas").addEventListener("mouseleave", () => { $("tile-tip").style.opacity = 0; });
+
+// ---------- upload ----------
+function parseNpy(buffer) {
+  const bytes = new Uint8Array(buffer);
+  const magic = String.fromCharCode(...bytes.slice(1, 6));
+  if (bytes[0] !== 0x93 || magic !== "NUMPY") throw new Error("this is not a .npy file");
+  const view = new DataView(buffer), major = bytes[6];
+  const headerLen = major === 1 ? view.getUint16(8, true) : view.getUint32(8, true);
+  const start = (major === 1 ? 10 : 12) + headerLen;
+  const header = new TextDecoder().decode(bytes.slice(major === 1 ? 10 : 12, start));
+  const descr = /'descr':\s*'([^']+)'/.exec(header)?.[1];
+  const shape = /'shape':\s*\(([^)]*)\)/.exec(header)?.[1].split(",").map((s) => s.trim()).filter(Boolean).map(Number);
+  if (/'fortran_order':\s*True/.test(header)) throw new Error("Fortran-ordered arrays are not supported");
+  const types = { "<f4": Float32Array, "<f8": Float64Array, "<i2": Int16Array, "<i4": Int32Array, "<u2": Uint16Array, "|u1": Uint8Array };
+  const Type = types[descr];
+  if (!Type) throw new Error(`unsupported number type ${descr}`);
+  const count = shape.reduce((a, b) => a * b, 1);
+  const data = new Type(buffer.slice(start, start + count * Type.BYTES_PER_ELEMENT));
+  return { shape, data: Float32Array.from(data) };
+}
+
+$("upload-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  $("error").textContent = "";
+  const file = $("up-file").files[0];
+  if (!file) return;
+  document.querySelectorAll(".chip").forEach((c) => c.setAttribute("aria-pressed", "false"));
+  $("viewer").classList.add("loading");
+  try {
+    let parsed;
+    try { parsed = parseNpy(await file.arrayBuffer()); } catch (err) { throw new Error(`could not read the file: ${err.message}`); }
+    const form = new FormData();
+    form.append("tile", file);
+    form.append("lat", $("up-lat").value);
+    form.append("lon", $("up-lon").value);
+    const response = await fetch("/detect", { method: "POST", body: form });
+    if (!response.ok) throw new Error(await apiError(response));
+    const body = await response.json();
+    const heights = parsed.data.map((v) => (Number.isFinite(v) ? v : 0));
+    showTile({
+      uploaded: true, size_px: parsed.shape[0], scale_m: 118.4505876, lat: +$("up-lat").value,
+      lon: +$("up-lon").value, heightsArr: heights, rimsArr: null, detections: body.craters, catalog: [],
+    }, body.seconds);
+  } catch (err) {
+    $("error").textContent = err.message.charAt(0).toUpperCase() + err.message.slice(1);
+  } finally {
+    $("viewer").classList.remove("loading");
+  }
+});
+</script>
+</body>
+</html>

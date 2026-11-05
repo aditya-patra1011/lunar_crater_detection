@@ -58,6 +58,11 @@ class TileSpec:
         centre = (self.size_px - 1) / 2
         return np.asarray(x) / self.scale_m + centre, -np.asarray(y) / self.scale_m + centre
 
+    def from_pixels(self, col, row) -> tuple[np.ndarray, np.ndarray]:
+        """Fractional (col, row) pixel positions to plane coordinates (m)."""
+        centre = (self.size_px - 1) / 2
+        return (np.asarray(col) - centre) * self.scale_m, -(np.asarray(row) - centre) * self.scale_m
+
 
 def sample_tile(dem: DemRaster, spec: TileSpec) -> np.ndarray:
     """Return the tile's heights in metres as a (size, size) float32 array."""

@@ -1,4 +1,5 @@
 import json
+from dataclasses import replace
 
 import numpy as np
 import pandas as pd
@@ -61,12 +62,12 @@ def test_train_writes_checkpoint_and_detector_runs(tiles_dir, tmp_path):
     assert history["epoch"].tolist() == [1, 2]
     assert np.isfinite(history[["train_loss", "val_loss"]].to_numpy()).all()
     config = json.loads((out / "config.json").read_text())
-    assert config["model"] == {"base": 4, "depth": 2}
+    assert config["model"] == {"base": 4, "depth": 2, "large_level": 0}
 
     model = load_model(str(out / "best.pt"))
     with np.load(tiles_dir / "tiles" / "t0.npz") as z:
-        prob = predict_rims(model, z["dem"])
-    assert prob.shape == (32, 32) and ((prob >= 0) & (prob <= 1)).all()
+        prob = predict_rims([model], z["dem"])
+    assert prob.shape == (1, 32, 32) and ((prob >= 0) & (prob <= 1)).all()
 
     detector = UNetDetector(checkpoint=str(out / "best.pt"), max_radius_px=12, min_score=0.0)
     found = detector(np.zeros((32, 32)), SCALE_M)
@@ -84,3 +85,76 @@ def test_detector_needs_a_checkpoint():
 def test_pick_device():
     assert train_unet.pick_device("cpu").type == "cpu"
     assert train_unet.pick_device("auto").type in {"cpu", "cuda"}
+
+
+def test_large_output_shape_and_old_checkpoints_still_load(tmp_path):
+    model = UNet(base=4, depth=3, large_level=2)
+    assert model(torch.zeros(2, 1, 32, 32)).shape == (2, 2, 32, 32)
+    with pytest.raises(ValueError):
+        UNet(base=4, depth=2, large_level=2)
+
+    old = UNet(base=4, depth=2)
+    path = tmp_path / "old.pt"
+    torch.save({"state_dict": old.state_dict(), "config": {"model": {"base": 4, "depth": 2}}}, path)
+    assert load_model(str(path)).large_level == 0
+
+
+def test_two_output_training_ensemble_and_large_sources(tiles_dir, tmp_path):
+    paths = []
+    for seed in (0, 1):
+        out = tmp_path / f"seed{seed}"
+        train_unet.main(
+            [str(tiles_dir), "--out", str(out), "--epochs", "1", "--batch-size", "2",
+             "--base", "4", "--depth", "3", "--large-min-diam", "1.5", "--large-level", "2",
+             "--device", "cpu", "--seed", str(seed)]
+        )  # fmt: skip
+        paths.append(str(out / "best.pt"))
+    assert json.loads((tmp_path / "seed0" / "config.json").read_text())["model"]["large_level"] == 2
+
+    one, two = load_model(paths[0]), load_model(paths[1])
+    dem = np.random.default_rng(0).normal(size=(32, 32)).astype(np.float32)
+    assert predict_rims([one, two], dem).shape == (2, 32, 32)
+    assert predict_rims([one, two], dem) == pytest.approx(
+        (predict_rims([one], dem) + predict_rims([two], dem)) / 2
+    )
+    detector = UNetDetector(
+        checkpoint=",".join(paths),
+        large_source="head",
+        large_from_km=2.0,
+        max_radius_px=20,
+        min_score=0.0,
+        large_min_score=0.0,
+    )
+    assert detector(dem, SCALE_M)["score"].is_monotonic_decreasing
+
+
+def test_size_gated_circles_use_each_source_on_its_side():
+    size = 128
+    yy, xx = np.mgrid[0:size, 0:size].astype(float)
+    small_ring = (np.abs(np.hypot(xx - 30, yy - 30) - 8) <= 1).astype(float)
+    large_ring = (np.abs(np.hypot(xx - 70, yy - 70) - 40) <= 2).astype(float)
+    prob = np.stack([small_ring, large_ring])
+    detector = UNetDetector(large_source="head", large_from_km=4.0, large_gain=0.5, min_score=0.5,
+                            large_min_score=0.5, max_radius_px=60)  # fmt: skip
+    found = detector.circles(prob, np.zeros((size, size)), SCALE_M)
+
+    best = found.iloc[0]
+    assert (best["x_px"], best["y_px"]) == (30, 30)
+    big = found[found["r_px"] > 30].iloc[0]
+    assert abs(big["r_px"] - 40) < 2 and big["score"] <= 0.5
+
+    with pytest.raises(ValueError, match="large-rim output"):
+        detector.circles(prob[:1], np.zeros((size, size)), SCALE_M)
+    with pytest.raises(ValueError, match="unknown"):
+        replace(detector, large_source="bogus").circles(prob, np.zeros((size, size)), SCALE_M)
+
+
+def test_classical_large_source_finds_a_bowl():
+    size = 128
+    yy, xx = np.mgrid[0:size, 0:size].astype(float)
+    d = np.hypot(xx - 64, yy - 64) / 30
+    dem = np.where(d < 1, 1400 * (d**2 - 1), 0.0)
+    detector = UNetDetector(large_source="classical", large_from_km=4.0, large_radius_scale=1.0,
+                            min_score=0.5, large_min_score=0.05, max_radius_px=60)  # fmt: skip
+    found = detector.circles(np.zeros((1, size, size)), dem, SCALE_M)
+    assert len(found) and abs(found.iloc[0]["r_px"] - 30) < 3

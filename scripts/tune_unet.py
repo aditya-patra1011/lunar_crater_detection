@@ -30,7 +30,7 @@ def rim_maps(tiles_dir: Path, tiles: pd.DataFrame, checkpoint: Path) -> list[np.
     maps = []
     for t in tiles.itertuples():
         with np.load(tiles_dir / "tiles" / f"{t.tile_id}.npz") as z:
-            maps.append(predict_rims(model, z["dem"]).astype(np.float32))
+            maps.append(predict_rims([model], z["dem"])[0].astype(np.float32))
     return maps
 
 

@@ -24,6 +24,7 @@ from pydantic import BaseModel
 
 from lunar_crater import __version__
 from lunar_crater.data.projection import wrap_longitude
+from lunar_crater.monitoring.drift import MIN_TILES, DriftMonitor, Reference, tile_features
 from lunar_crater.serving.predictor import CraterPredictor
 from lunar_crater.serving.samples import SampleTiles
 
@@ -42,6 +43,7 @@ class Crater(BaseModel):
     y_px: float
     r_px: float
     score: float
+    confidence: float | None = None
 
 
 class Detections(BaseModel):
@@ -58,6 +60,8 @@ class Health(BaseModel):
     model_id: str
     size_px: int
     scale_m: float
+    confidence: bool
+    monitoring: bool
 
 
 def read_tile(data: bytes, size_px: int) -> np.ndarray:
@@ -76,17 +80,28 @@ def read_tile(data: bytes, size_px: int) -> np.ndarray:
     return dem
 
 
-def create_app(predictor: CraterPredictor | None = None, tiles_dir: Path | None = None) -> FastAPI:
+def create_app(
+    predictor: CraterPredictor | None = None,
+    tiles_dir: Path | None = None,
+    reference: Reference | None = None,
+    monitor_min_tiles: int = MIN_TILES,
+) -> FastAPI:
     """Build the API around ``predictor``, or the model at ``LUNAR_MODEL``.
 
     Example tiles come from ``tiles_dir``, or ``LUNAR_TILES``; without a tile set the
-    dashboard still works, but only with uploaded tiles.
+    dashboard still works, but only with uploaded tiles. Tiles sent to ``/detect`` are
+    compared with ``reference``, or ``<model>.reference.json`` beside the model.
     """
     if predictor is None:
-        predictor = CraterPredictor(Path(os.environ.get("LUNAR_MODEL", DEFAULT_MODEL)))
+        model_path = Path(os.environ.get("LUNAR_MODEL", DEFAULT_MODEL))
+        predictor = CraterPredictor(model_path)
+        reference_path = model_path.with_suffix(".reference.json")
+        if reference is None and reference_path.exists():
+            reference = Reference.load(reference_path)
     if tiles_dir is None:
         tiles_dir = Path(os.environ.get("LUNAR_TILES", DEFAULT_TILES))
     samples = SampleTiles(tiles_dir, predictor.size_px)
+    monitor = DriftMonitor(reference, min_tiles=monitor_min_tiles)
     page = (STATIC / "index.html").read_text(encoding="utf-8")
     # The first tile builds the ring kernels, which takes far longer than later tiles.
     predictor(np.zeros((predictor.size_px, predictor.size_px), np.float32), 0.0, 0.0)
@@ -117,6 +132,11 @@ def create_app(predictor: CraterPredictor | None = None, tiles_dir: Path | None 
         return {**result, "model_id": predictor.model_id, "min_score": predictor.min_score,
                 "seconds": time.perf_counter() - start}  # fmt: skip
 
+    @app.get("/monitoring")
+    def monitoring() -> dict:
+        """Whether recent tiles sent to /detect still look like the reference tiles."""
+        return monitor.report()
+
     @app.get("/health")
     def health() -> Health:
         return Health(
@@ -125,6 +145,8 @@ def create_app(predictor: CraterPredictor | None = None, tiles_dir: Path | None 
             model_id=predictor.model_id,
             size_px=predictor.size_px,
             scale_m=predictor.scale_m,
+            confidence=predictor.confidence is not None,
+            monitoring=monitor.reference is not None,
         )
 
     @app.post("/detect")
@@ -142,6 +164,9 @@ def create_app(predictor: CraterPredictor | None = None, tiles_dir: Path | None 
         dem = read_tile(data, predictor.size_px)
         start = time.perf_counter()
         found = predictor(dem, lat, float(wrap_longitude(lon)), min_score=min_score)
+        if min_score is None:
+            # Only the default threshold is comparable with the reference.
+            monitor.record(tile_features(dem, predictor.scale_m, found["score"]))
         return Detections(
             model_id=predictor.model_id,
             min_score=predictor.min_score if min_score is None else min_score,

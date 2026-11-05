@@ -16,6 +16,8 @@ from fastapi.testclient import TestClient  # noqa: E402
 from lunar_crater.data.tiles import TileSpec  # noqa: E402
 from lunar_crater.models.detector import UNetDetector  # noqa: E402
 from lunar_crater.models.unet import UNet  # noqa: E402
+from lunar_crater.monitoring.drift import Reference, tile_features  # noqa: E402
+from lunar_crater.postprocess.confidence import Confidence  # noqa: E402
 from lunar_crater.postprocess.finder import RimCircleFinder  # noqa: E402
 from lunar_crater.serving.app import create_app  # noqa: E402
 from lunar_crater.serving.export import export  # noqa: E402
@@ -220,3 +222,43 @@ def test_dashboard_works_without_a_tile_set(predictor, tmp_path):
     client = TestClient(create_app(predictor, tiles_dir=tmp_path / "none"))
     assert client.get("/samples").json() == []
     assert client.get("/").status_code == 200
+
+
+def test_confidence_is_added_when_its_file_is_beside_the_model(built, tmp_path, dem):
+    onnx_path = tmp_path / "model.onnx"
+    onnx_path.write_bytes(built["onnx"].read_bytes())
+    onnx_path.with_suffix(".json").write_text(json.dumps(built["settings"]))
+    rows = pd.DataFrame({"score": [-1.0, 5.0], "diam_km": [2.0, 2.0], "matched": [False, True]})
+    Confidence.fit(rows).save(onnx_path.with_suffix(".confidence.json"))
+
+    predictor = CraterPredictor(onnx_path)
+    found = predictor(dem, 0.0, 0.0)
+    assert found["confidence"].between(0, 1).all()
+    client = TestClient(create_app(predictor, tiles_dir=tmp_path))
+    assert client.get("/health").json()["confidence"] is True
+    assert post(client, as_npy(dem)).json()["craters"][0]["confidence"] is not None
+
+
+def test_monitoring_waits_for_tiles_then_compares(predictor, tmp_path):
+    rng = np.random.default_rng(5)
+    tiles = [rng.normal(scale=300, size=(SIZE, SIZE)).astype(np.float32) for _ in range(40)]
+    reference = Reference.build(
+        pd.DataFrame([tile_features(t, SCALE_M, predictor(t, 0, 0)["score"]) for t in tiles])
+    )
+    app = create_app(predictor, tiles_dir=tmp_path, reference=reference, monitor_min_tiles=30)
+    client = TestClient(app)
+    assert client.get("/health").json()["monitoring"] is True
+    assert client.get("/monitoring").json()["status"] == "waiting"
+
+    post(client, as_npy(tiles[0]), min_score=0.5)  # a custom threshold is not recorded
+    assert client.get("/monitoring").json()["tiles_seen"] == 0
+    for tile in tiles[:30]:
+        assert post(client, as_npy(tile * 5)).status_code == 200
+    report = client.get("/monitoring").json()
+    assert report["tiles_seen"] == 30
+    assert report["features"]["relief_m"]["status"] == "drift"
+    assert report["status"] == "drift"
+    assert (
+        TestClient(create_app(predictor, tiles_dir=tmp_path)).get("/monitoring").json()["status"]
+        == "off"
+    )

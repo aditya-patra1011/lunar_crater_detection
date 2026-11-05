@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
+import importlib
 import json
 import sys
 import time
@@ -24,10 +25,25 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from lunar_crater.baselines.classical import RadialSlopeDetector
 from lunar_crater.evaluation.matching import evaluate_tile, summarize
 
-DETECTORS = {"classical": RadialSlopeDetector}
+#: Detector classes by name, as "module:Class" so optional dependencies (torch for the
+#: U-Net) are imported only when that detector is used.
+DETECTORS = {
+    "classical": "lunar_crater.baselines.classical:RadialSlopeDetector",
+    "unet": "lunar_crater.models.detector:UNetDetector",
+}
+
+
+def detector_class(name: str):
+    """The detector class registered under ``name``."""
+    target = DETECTORS[name]
+    if not isinstance(target, str):
+        return target
+    module, _, attr = target.partition(":")
+    return getattr(importlib.import_module(module), attr)
+
+
 PRED_COLUMNS = ["tile_id", "x_px", "y_px", "r_px", "score"]
 
 
@@ -102,10 +118,11 @@ def sweep(preds, tiles, craters, thresholds, **kwargs) -> pd.DataFrame:
 
 
 def default_thresholds(scores: pd.Series, n: int = 20) -> list[float]:
-    """``n`` thresholds from keeping every detection up to keeping the top 5%."""
+    """``n`` thresholds from keeping every detection to the top 5%, then finer to the top 0.5%."""
     if scores.empty:
         return [-np.inf]
-    return np.unique(np.quantile(scores, np.linspace(0, 0.95, n))).tolist()
+    steps = np.concatenate([np.linspace(0, 0.95, n), [0.96, 0.97, 0.98, 0.99, 0.995]])
+    return np.unique(np.quantile(scores, steps)).tolist()
 
 
 def best_threshold(curve: pd.DataFrame) -> float:
@@ -158,7 +175,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.split == "test" and args.min_score is None:
         parser.error("--split test needs --min-score, chosen on val")
 
-    detector_cls = DETECTORS[args.detector]
+    detector_cls = detector_class(args.detector)
     detector = detector_cls(**parse_params(detector_cls, args.params))
     tiles, craters = load_split(args.tiles_dir, args.split)
     if args.limit:

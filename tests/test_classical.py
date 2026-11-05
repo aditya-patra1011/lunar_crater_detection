@@ -4,11 +4,10 @@ import pytest
 
 from lunar_crater.baselines.classical import (
     RadialSlopeDetector,
-    _fast_size,
-    _local_maxima,
     fit_radius_scale,
 )
 from lunar_crater.evaluation.matching import circle_iou
+from lunar_crater.postprocess.peaks import fast_size, local_maxima
 
 SCALE_M = 118.45
 
@@ -106,9 +105,9 @@ def test_fit_radius_scale():
 
 
 def test_helpers():
-    assert _fast_size(229) == 240
-    assert _fast_size(256) == 256
+    assert fast_size(229) == 240
+    assert fast_size(256) == 256
     v = np.zeros((3, 4, 4))
     v[1, 2, 2] = 1
     v[0, 0, 0] = 0.5
-    assert np.argwhere(_local_maxima(v) & (v > 0)).tolist() == [[0, 0, 0], [1, 2, 2]]
+    assert np.argwhere(local_maxima(v) & (v > 0)).tolist() == [[0, 0, 0], [1, 2, 2]]

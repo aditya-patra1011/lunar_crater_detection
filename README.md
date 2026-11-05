@@ -6,7 +6,7 @@ Detect impact craters on the Moon from LRO/LOLA elevation data, evaluate the det
 
 ## Status
 
-Work in progress. Data, tiling, the geographic split and the evaluation harness are in place. The classical baseline scores F1 0.369 on held-out test terrain ([docs/BASELINES.md](docs/BASELINES.md)); no learned models have been trained yet.
+Work in progress. Data, tiling, the geographic split, the evaluation harness and two baselines are in place. On held-out test terrain the U-Net baseline scores F1 0.533, against 0.369 for the classical baseline, which is still better on craters over 8 km ([docs/BASELINES.md](docs/BASELINES.md)).
 
 ## Problem
 
@@ -47,7 +47,7 @@ pytest
 - [x] Tiling and label rasterization
 - [x] Geographic split and evaluation protocol
 - [x] Classical baseline and evaluation harness
-- [ ] U-Net baseline training
+- [x] U-Net baseline training
 - [ ] Improved models and ensemble
 - [ ] Post-processing, ONNX export and FastAPI service
 - [ ] Drift monitoring, model card and final write-up

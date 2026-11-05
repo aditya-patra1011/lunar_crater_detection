@@ -1,6 +1,6 @@
 # Model card: U-Net plus large-rim model, with ring matching
 
-This covers the best detector so far. `unet_v1` finds craters under 6 km, and `ms_unet_v1`, a two-output U-Net averaged over three seeds, finds those of 6 km and wider. Later models will update this card. Full results and method are in [docs/BASELINES.md](../docs/BASELINES.md).
+This covers the served detector. `unet_v1` finds craters under 6 km, and seed 0 of `ms_unet_v1`, a two-output U-Net, finds those of 6 km and wider. Both run from one ONNX file ([docs/SERVING.md](../docs/SERVING.md)). Averaging three seeds for large craters scores almost the same, at twice the cost. Full results and method are in [docs/BASELINES.md](../docs/BASELINES.md).
 
 ## Intended use
 
@@ -9,7 +9,7 @@ Research and portfolio use: finding lunar craters of about 1-32 km in LOLA eleva
 ## Inputs and outputs
 
 - **Input:** a 256 x 256 tile of heights at 118.45 m/px, reprojected to a local orthographic grid ([decision 0001](../docs/decisions/0001-orthographic-tiles.md)).
-- **Output:** circles in tile pixels (x, y, radius), each with a score. Use with min_score 0.435, the large_from_km 6 cut and large_gain 1.25.
+- **Output:** circles in tile pixels (x, y, radius) and on the Moon (latitude, longitude, diameter), each with a score. The default threshold, 0.436, was chosen on val; the other settings are in `crater_detector.json`.
 
 ## Training data
 
@@ -21,15 +21,15 @@ On 429 test tiles from 7 further regions, under [the protocol](../docs/EVALUATIO
 
 | diameter (km) | recall | precision | F1 |
 | --- | --- | --- | --- |
-| 1-2 | 0.382 | 0.746 | 0.505 |
-| 2-4 | 0.534 | 0.748 | 0.623 |
-| 4-8 | 0.530 | 0.648 | 0.583 |
-| 8-16 | 0.605 | 0.667 | 0.635 |
-| 16-32 | 0.279 | 1.000 | 0.437 |
+| 1-2 | 0.381 | 0.747 | 0.505 |
+| 2-4 | 0.533 | 0.752 | 0.624 |
+| 4-8 | 0.530 | 0.640 | 0.580 |
+| 8-16 | 0.605 | 0.637 | 0.621 |
+| 16-32 | 0.294 | 1.000 | 0.455 |
 | 32 and over | 0.000 | – | – |
-| **all** | **0.426** | **0.735** | **0.540** |
+| **all** | **0.426** | **0.735** | **0.539** |
 
-The U-Net alone scores F1 0.533 and the classical baseline 0.369. Over 8 km this detector scores 0.569, against 0.351 and 0.443. The 16-32 km row rests on 20 detections and 68 craters, so it is uncertain.
+The U-Net alone scores F1 0.533 and the classical baseline 0.369. Over 8 km this detector scores 0.562, against 0.351 and 0.443. The 16-32 km row rests on 21 detections and 68 craters, so it is uncertain.
 
 ## Known limitations
 
@@ -37,9 +37,10 @@ The U-Net alone scores F1 0.533 and the classical baseline 0.369. Over 8 km this
 - Nothing over 32 km was found.
 - Precision is a lower bound, because the catalog misses real craters. The false positive audit has not been done yet.
 - The small-crater model comes from one training run. Three seeds of the two-output network agree closely on val, but that is a different network. There are only 7 test regions, and results by terrain type have not been measured.
-- It runs four networks per tile. Whether the three-seed average beats a single seed for large craters was not measured.
+- It takes about 1.6 s per tile on a laptop CPU, mostly in ring matching.
+- The service checks a tile's shape but not its scale or projection, so tiles must be prepared like the training tiles.
 - Tuning assumed 118 m/px; other resolutions are untested.
 
 ## Files
 
-Four `best.pt` files (31 MB each) are not in this repository. They can be rebuilt with the [training notebook](../notebooks/train_unet_colab.ipynb).
+`crater_detector.onnx` (63 MB) and the `best.pt` files it was exported from are not in this repository. They can be rebuilt with the [training notebook](../notebooks/train_unet_colab.ipynb) and the export command in [docs/SERVING.md](../docs/SERVING.md).

@@ -65,3 +65,22 @@ def test_find_circles_and_nms():
 
     assert found[["x_px", "y_px", "r_px"]].values.tolist() == [[10, 10, 5], [25, 25, 5]]
     assert greedy_nms(found.iloc[:0], 0.3) == []
+
+
+def test_wide_rings_tolerate_rim_position_error():
+    prob = ring_map([(64, 64, 40)], thickness=2.0)
+    thin = RingMatcher(min_radius_px=43, max_radius_px=43.5)
+    wide = RingMatcher(min_radius_px=43, max_radius_px=43.5, thickness_frac=0.2)
+    assert wide.score_volume(prob)[0][0, 64, 64] > thin.score_volume(prob)[0][0, 64, 64] + 0.1
+
+
+def test_radius_scale_and_size_exponent():
+    prob = ring_map([(30, 30, 10), (85, 85, 20)])
+    plain = RingMatcher(max_radius_px=30, min_score=0.6)(prob)
+    tuned = RingMatcher(max_radius_px=30, min_score=0.6, radius_scale=1.1, size_exponent=1.0)(prob)
+
+    assert len(plain) == len(tuned) == 2
+    big_plain, big_tuned = plain.loc[plain["r_px"].idxmax()], tuned.loc[tuned["r_px"].idxmax()]
+    assert big_tuned["r_px"] == pytest.approx(1.1 * big_plain["r_px"])
+    assert big_tuned["score"] == pytest.approx(big_plain["score"] * big_plain["r_px"] / 10)
+    assert tuned["score"].is_monotonic_decreasing

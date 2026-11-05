@@ -24,19 +24,26 @@ class RingMatcher:
     """Find circles in a (h, w) rim probability map.
 
     Radii run from ``min_radius_px`` to ``max_radius_px`` in steps of ``radius_step``
-    (a ratio). A ring is ``thickness_px`` wide, and the interior is everything closer
-    to the centre than ``r - thickness_px``. Peaks need a score (ring mean minus interior
-    mean) of at least ``min_score`` and at least ``min_coverage`` of the ring inside the
-    tile.
+    (a ratio). A ring is ``thickness_px`` wide, or ``thickness_frac * r`` if wider, since
+    rim position errors grow with crater size. The interior is everything closer to the
+    centre than ``r`` minus that width. Peaks need a score (ring mean minus interior mean)
+    of at least ``min_score`` and at least ``min_coverage`` of the ring inside the tile.
+
+    Reported radii are the ring radius times ``radius_scale``, fitted on train tiles.
+    Reported scores are multiplied by ``(r / 10 px) ** size_exponent``, so one threshold
+    can suit all sizes even though large rims are predicted less completely.
     """
 
     min_radius_px: float = 4.0
     max_radius_px: float = 100.0
     radius_step: float = 1.05
     thickness_px: float = 2.0
+    thickness_frac: float = 0.0
     min_score: float = 0.2
     min_coverage: float = 0.5
     nms_iou: float = 0.3
+    radius_scale: float = 1.0
+    size_exponent: float = 0.0
 
     def radii(self) -> np.ndarray:
         n = int(
@@ -48,7 +55,8 @@ class RingMatcher:
         """Ring-minus-interior score and ring coverage for every radius, (n_radii, h, w)."""
         radii = self.radii()
         h, w = prob.shape
-        pad = int(np.ceil(radii[-1] + self.thickness_px)) + 1
+        widest = max(self.thickness_px, self.thickness_frac * radii[-1])
+        pad = int(np.ceil(radii[-1] + widest)) + 1
         shape = (fast_size(h + pad), fast_size(w + pad))
         fp = np.fft.rfft2(np.nan_to_num(prob), shape)
         fm = np.fft.rfft2(np.ones_like(prob), shape)
@@ -56,7 +64,8 @@ class RingMatcher:
         scores = np.empty((len(radii), h, w))
         coverage = np.empty_like(scores)
         for i, r in enumerate(radii):
-            ring, disc, total = _kernels(float(r), self.thickness_px, pad, shape)
+            width = max(self.thickness_px, self.thickness_frac * float(r))
+            ring, disc, total = _kernels(float(r), width, pad, shape)
             n_ring = np.maximum(np.fft.irfft2(fm * ring, shape)[:h, :w], 1e-9)
             n_disc = np.maximum(np.fft.irfft2(fm * disc, shape)[:h, :w], 1e-9)
             on_ring = np.fft.irfft2(fp * ring, shape)[:h, :w] / n_ring
@@ -70,7 +79,12 @@ class RingMatcher:
         radii = self.radii()
         scores, coverage = self.score_volume(prob)
         scores = np.where(coverage >= self.min_coverage, scores, -np.inf)
-        return find_circles(scores, radii, self.min_score, self.nms_iou)
+        found = find_circles(scores, radii * self.radius_scale, self.min_score, self.nms_iou)
+        if self.size_exponent:
+            size = (found["r_px"] / self.radius_scale / 10.0) ** self.size_exponent
+            found = found.assign(score=found["score"] * size)
+            found = found.sort_values("score", ascending=False, ignore_index=True)
+        return found
 
 
 @lru_cache(maxsize=256)

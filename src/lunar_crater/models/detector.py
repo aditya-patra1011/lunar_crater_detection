@@ -44,9 +44,12 @@ class UNetDetector:
     max_radius_px: float = 100.0
     radius_step: float = 1.05
     thickness_px: float = 2.0
+    thickness_frac: float = 0.0
     min_score: float = 0.1
     min_coverage: float = 0.5
     nms_iou: float = 0.3
+    radius_scale: float = 1.0
+    size_exponent: float = 0.0
 
     def matcher(self) -> RingMatcher:
         names = {f.name for f in fields(RingMatcher)}

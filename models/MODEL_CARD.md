@@ -31,13 +31,16 @@ On 429 test tiles from 7 further regions, under [the protocol](../docs/EVALUATIO
 
 Confidence was fitted on val detections. On test detections its calibration error is 0.014 and its Brier score 0.146, against 0.195 for one rate for all detections ([details](../docs/SERVING.md#confidence)).
 
+Precision is measured against the catalog, which lacks some real craters. Checking 60 unmatched test detections by eye found 28% of them to be real craters (95% interval 17% to 43%), which puts precision at about 0.81 rather than 0.735 ([audit](../docs/audit/README.md)).
+
 The U-Net alone scores F1 0.533 and the classical baseline 0.369. Over 8 km this detector scores 0.562, against 0.351 and 0.443. The 16-32 km row rests on 21 detections and 68 craters, so it is uncertain.
 
 ## Known limitations
 
 - It finds fewer than half of catalogued craters at this threshold. Recall on 1-2 km craters, 70% of test craters, is 0.38.
 - Nothing over 32 km was found.
-- Precision and confidence are lower bounds, because the catalog misses real craters. A sample of 60 unmatched test detections has been prepared for checking by eye ([docs/audit](../docs/audit/README.md)); it has not been judged yet.
+- Precision and confidence are measured against the catalog, so they understate how often a detection is a real crater. The audit puts true precision near 0.81; the real craters it found were all under 6 km.
+- Circles that run off the tile edge are often wrong: on test, 50-59% of them match the catalog, against 77-86% of circles inside the tile. The model fits whole circles to rims cut off by the edge, and most unmatched detections of 2 km and wider are of this kind.
 - The small-crater model comes from one training run. Three seeds of the two-output network agree closely on val, but that is a different network. There are only 7 test regions, and results by terrain type have not been measured.
 - It takes about 1.6 s per tile on a laptop CPU, mostly in ring matching.
 - The service checks a tile's shape but not its scale or projection, so tiles must be prepared like the training tiles. Its drift monitor flags tiles whose heights, slopes or scores differ from the reference tiles ([details](../docs/SERVING.md#monitoring)), but it needs 100 tiles to judge and can miss smaller changes.

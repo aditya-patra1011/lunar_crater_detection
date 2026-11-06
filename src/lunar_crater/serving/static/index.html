@@ -222,7 +222,7 @@ footer .wrap { border-top: 1px solid var(--line); padding-top: 20px; display: fl
   <div class="stats">
     <div class="stat"><div class="label">Overall score (F1)</div><div class="value num">0.54</div><div class="note">Up from 0.37 for the non-learning method</div></div>
     <div class="stat"><div class="label">Catalogued craters found</div><div class="value num">43%</div><div class="note">Of 13,089 craters on unseen terrain</div></div>
-    <div class="stat"><div class="label">Detections that match the catalogue</div><div class="value num">74%</div><div class="note">Some others are likely real but uncatalogued</div></div>
+    <div class="stat"><div class="label">Detections that match the catalogue</div><div class="value num">74%</div><div class="note">A check by eye puts real craters near 81%</div></div>
     <div class="stat"><div class="label">Time per 30 km tile</div><div class="value num">1.6 s</div><div class="note">On one laptop processor</div></div>
   </div>
 </div></header>
@@ -274,7 +274,7 @@ footer .wrap { border-top: 1px solid var(--line); padding-top: 20px; display: fl
   <div class="metric-key">
     <div class="card"><div class="big num">0.54</div><h3>F1 score</h3><p>The balance of finding craters and avoiding false alarms. The non-learning baseline scores 0.37.</p></div>
     <div class="card"><div class="big num">43%</div><h3>Recall: craters found</h3><p>Of the craters in the catalogue, the share it finds. Most of the misses are the smallest, faintest craters.</p></div>
-    <div class="card"><div class="big num">74%</div><h3>Precision: answers that match</h3><p>Of its detections, the share that match a catalogued crater. This is a floor, since the catalogue misses some real craters.</p></div>
+    <div class="card"><div class="big num">74%</div><h3>Precision: answers that match</h3><p>Of its detections, the share that match a catalogued crater. This is a floor: of 60 others checked by eye, about 28% were real craters missing from the catalogue, which puts the true share near 81%.</p></div>
   </div>
 
   <div class="card chart-card" id="chart-card">
@@ -361,13 +361,14 @@ footer .wrap { border-top: 1px solid var(--line); padding-top: 20px; display: fl
     <div class="card"><h3>Limits</h3><ul>
       <li>It finds fewer than half of catalogued craters, and only 38% of the 1–2 km ones.</li>
       <li>Craters wider than about 32 km are not found; they rarely fit inside one tile.</li>
+      <li>Circles that run off the tile edge are often wrong: about half match the catalogue, against over three quarters inside the tile.</li>
       <li>Tiles must be 256 × 256 heights, 118 m apart, prepared like the training tiles. The service checks the shape but cannot check the scale.</li>
       <li>The test covers 7 regions of the Moon; results on other terrain may differ.</li>
       <li>It is a research and portfolio project, not checked for landing or navigation decisions.</li>
     </ul></div>
-    <div class="card"><h3>Still to do, and later</h3><ul>
-      <li>Check a sample of "not in catalogue" detections by eye to see how many are real craters.</li>
-      <li>Later: better recall on small craters, craters over 32 km, and an object-detection model.</li>
+    <div class="card"><h3>Next steps</h3><ul>
+      <li>Overlapping tiles, so craters cut by the tile edge are not mistaken.</li>
+      <li>Better recall on small craters, craters over 32 km, and an object-detection model.</li>
     </ul></div>
   </div>
 </div></section>

@@ -11,13 +11,18 @@ import onnxruntime
 import pandas as pd
 
 from lunar_crater.data.tiles import TileSpec
+from lunar_crater.postprocess.confidence import Confidence
 from lunar_crater.postprocess.finder import RimCircleFinder
 from lunar_crater.postprocess.georef import to_moon_coords
 from lunar_crater.training.data import normalize_dem
 
 
 class CraterPredictor:
-    """The ONNX network, its settings and the steps from heights to craters."""
+    """The ONNX network, its settings and the steps from heights to craters.
+
+    If ``<name>.confidence.json`` sits beside the ONNX file, each crater also gets a
+    ``confidence``: the chance, learned on val, that it matches a catalog crater.
+    """
 
     def __init__(self, onnx_path: Path):
         onnx_path = Path(onnx_path)
@@ -33,6 +38,8 @@ class CraterPredictor:
         self.session = onnxruntime.InferenceSession(
             str(onnx_path), providers=["CPUExecutionProvider"]
         )
+        confidence_path = onnx_path.with_suffix(".confidence.json")
+        self.confidence = Confidence.load(confidence_path) if confidence_path.exists() else None
 
     def rim_maps(self, dem: np.ndarray) -> np.ndarray:
         """Rim probabilities for one tile, (channels, h, w)."""
@@ -48,4 +55,7 @@ class CraterPredictor:
         threshold = self.min_score if min_score is None else min_score
         found = self.finder.circles(self.rim_maps(dem), dem, self.scale_m)
         found = found[found["score"] >= threshold].reset_index(drop=True)
-        return to_moon_coords(found, TileSpec(lat, lon, self.size_px, self.scale_m))
+        found = to_moon_coords(found, TileSpec(lat, lon, self.size_px, self.scale_m))
+        if self.confidence is not None:
+            found = found.assign(confidence=self.confidence(found["score"], found["diam_km"]))
+        return found

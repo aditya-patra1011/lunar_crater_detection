@@ -94,6 +94,10 @@ header.hero {
 .pill .dot { width: 8px; height: 8px; border-radius: 50%; background: #8a8a85; }
 .pill.ok .dot { background: #3fbf6a; }
 .pill.down .dot { background: #e66767; }
+.pill.mon { background: var(--surface-2); color: var(--text-2); border-color: var(--line); }
+.pill.mon.stable .dot { background: #0ca30c; }
+.pill.mon.watch .dot { background: #fab219; }
+.pill.mon.drift .dot { background: #d03b3b; }
 .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: 28px; }
 .stat { background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.1); border-radius: 14px; padding: 16px; }
 .stat .label { font-size: 13px; color: #b9b8b1; }
@@ -207,7 +211,7 @@ footer .wrap { border-top: 1px solid var(--line); padding-top: 20px; display: fl
 <nav class="top"><div class="wrap">
   <a class="brand" href="#"><img src="/favicon.ico" width="20" height="20" alt="">Lunar Crater Detection</a>
   <div class="links">
-    <a href="#problem">Problem</a><a href="#approach">Approach</a><a href="#results">Results</a><a class="keep" href="#try">Try it</a><a href="#limits">Limits</a><a class="keep" href="/docs">API</a>
+    <a href="#problem">Problem</a><a href="#approach">Approach</a><a href="#results">Results</a><a class="keep" href="#try">Try it</a><a href="#monitoring">Monitoring</a><a href="#limits">Limits</a><a class="keep" href="/docs">API</a>
   </div>
 </div></nav>
 
@@ -321,7 +325,8 @@ footer .wrap { border-top: 1px solid var(--line); padding-top: 20px; display: fl
           <div class="mini"><div class="v num" id="m-time">–</div><div class="l">seconds to run</div></div>
         </div>
         <p class="hint" id="tile-caption" style="margin-bottom:10px">Detections, most confident first.</p>
-        <div class="list"><table id="det-table"><thead><tr><th>Position</th><th>Size</th><th>Score</th><th>Catalogue</th></tr></thead><tbody></tbody></table></div>
+        <p class="hint" style="margin:-4px 0 10px">Confidence is the chance, learned on separate val tiles, that a detection matches a catalogued crater. Real craters missing from the catalogue make it an underestimate.</p>
+        <div class="list"><table id="det-table"><thead><tr><th>Position</th><th>Size</th><th id="conf-head" title="Chance, learned on val tiles, that a detection matches a catalogue crater">Confidence</th><th>Catalogue</th></tr></thead><tbody></tbody></table></div>
       </div>
       <div class="card upload">
         <h3>Use your own tile</h3>
@@ -338,6 +343,17 @@ footer .wrap { border-top: 1px solid var(--line); padding-top: 20px; display: fl
   </div>
 </div></section>
 
+<section id="monitoring"><div class="wrap">
+  <div class="kicker">Monitoring</div>
+  <h2>Are incoming tiles still familiar?</h2>
+  <p class="intro">A model is only trustworthy on data like what it was checked on. Every tile sent to the API is summarised by its terrain and by what the model found, and the latest 200 are compared with the tiles the model was trained and tuned on. The example tiles above are not counted; uploads are.</p>
+  <div class="card">
+    <div class="chart-head"><div><h3>Drift check</h3><p class="hint" id="mon-message">Loading…</p></div><span class="pill mon" id="mon-status"><span class="dot"></span><span>–</span></span></div>
+    <div style="overflow-x:auto"><table id="mon-table"><thead><tr><th>What is measured</th><th>Recent median</th><th>Shift (PSI)</th><th>Alarm above</th><th>Status</th></tr></thead><tbody></tbody></table></div>
+    <p class="hint" style="margin-top:10px">PSI measures how far the spread of recent values has moved from the reference. Terrain differs a lot between regions of the Moon, so each alarm line was learned from how much unseen but normal regions shift: "worth watching" is rarer than 1 in 20 normal cases, "shifted" rarer than 1 in 100.</p>
+  </div>
+</div></section>
+
 <section id="limits"><div class="wrap">
   <div class="kicker">Limits and next steps</div>
   <h2>What to keep in mind</h2>
@@ -350,8 +366,6 @@ footer .wrap { border-top: 1px solid var(--line); padding-top: 20px; display: fl
       <li>It is a research and portfolio project, not checked for landing or navigation decisions.</li>
     </ul></div>
     <div class="card"><h3>Still to do, and later</h3><ul>
-      <li>Watch for incoming tiles that differ from the training data (drift monitoring).</li>
-      <li>Turn scores into plain probabilities a reader can trust.</li>
       <li>Check a sample of "not in catalogue" detections by eye to see how many are real craters.</li>
       <li>Later: better recall on small craters, craters over 32 km, and an object-detection model.</li>
     </ul></div>
@@ -392,6 +406,24 @@ fetch("/health").then((r) => r.json()).then((h) => {
   $("health").className = "pill down";
   $("health").lastElementChild.textContent = "Model not reachable";
 });
+
+// ---------- monitoring ----------
+const STATUS_TEXT = { stable: "Stable", watch: "Worth watching", drift: "Shifted", waiting: "Collecting tiles", off: "Off" };
+function loadMonitoring() {
+  fetch("/monitoring").then((r) => r.json()).then((m) => {
+    const pill = $("mon-status");
+    pill.className = `pill mon ${m.status}`;
+    pill.lastElementChild.textContent = STATUS_TEXT[m.status] || m.status;
+    $("mon-message").textContent = m.message || `Last ${m.in_window} of ${m.tiles_seen} tiles sent to the API, against ${Number(m.reference_tiles).toLocaleString()} reference tiles.`;
+    const body = $("mon-table").tBodies[0];
+    if (!m.features) {
+      body.innerHTML = `<tr><td colspan="5" class="hint">${m.status === "off" ? "No reference set is loaded on this server." : `Upload or send at least ${m.min_tiles} tiles to see a comparison.`}</td></tr>`;
+      return;
+    }
+    body.innerHTML = Object.values(m.features).map((f) => `<tr><td>${esc(f.meaning)}</td><td class="num">${Math.abs(f.recent_median) >= 100 ? Math.round(f.recent_median).toLocaleString() : fmt(f.recent_median, 2)}</td><td class="num">${fmt(f.psi, 3)}</td><td class="num">${fmt(f.drift_above, 2)}</td><td><span class="tag"><i style="background:${{ stable: "#0ca30c", watch: "#fab219", drift: "#d03b3b" }[f.status]}"></i>${STATUS_TEXT[f.status]}</span></td></tr>`).join("");
+  }).catch(() => { $("mon-message").textContent = "Could not reach the monitoring endpoint."; });
+}
+loadMonitoring();
 
 // ---------- chart ----------
 function drawChart() {
@@ -552,6 +584,7 @@ function statusTag(d) {
     ? `<span class="tag"><i style="background:var(--ov-hit)"></i>Listed</span>`
     : `<span class="tag"><i style="background:var(--ov-extra)"></i>Not listed</span>`;
 }
+const confText = (d) => (d.confidence == null ? `score ${fmt(d.score)}` : `${Math.round(d.confidence * 100)}%`);
 const latText = (v) => `${Math.abs(v).toFixed(3)}° ${v >= 0 ? "N" : "S"}`;
 const lonText = (v) => `${Math.abs(v).toFixed(3)}° ${v >= 0 ? "E" : "W"}`;
 
@@ -567,7 +600,7 @@ function showTile(t, seconds) {
 
   const dets = [...t.detections].sort((a, b) => b.score - a.score);
   $("det-table").tBodies[0].innerHTML = dets.length
-    ? dets.map((d) => `<tr><td class="num">${latText(d.lat)}, ${lonText(d.lon)}</td><td class="num">${fmt(d.diam_km, 1)} km</td><td class="num">${fmt(d.score)}</td><td>${statusTag(d)}</td></tr>`).join("")
+    ? dets.map((d) => `<tr><td class="num">${latText(d.lat)}, ${lonText(d.lon)}</td><td class="num">${fmt(d.diam_km, 1)} km</td><td class="num">${confText(d)}</td><td>${statusTag(d)}</td></tr>`).join("")
     : `<tr><td colspan="4" class="hint">No craters above the confidence threshold.</td></tr>`;
   $("m-time").textContent = fmt(seconds, 1);
   if (t.uploaded) {
@@ -650,7 +683,7 @@ $("canvas").addEventListener("mousemove", (e) => {
   if (!best) { tip.style.opacity = 0; return; }
   const label = { hit: "Found, matches the catalogue", extra: "Found, not in the catalogue", miss: "Catalogue crater the model missed", new: "Detected" }[best.kind];
   const where = best.lat !== undefined ? `<br>${latText(best.lat)}, ${lonText(best.lon)}` : "";
-  const score = best.score !== undefined ? ` · score ${fmt(best.score)}` : "";
+  const score = best.confidence != null ? ` · ${Math.round(best.confidence * 100)}% confidence` : best.score !== undefined ? ` · score ${fmt(best.score)}` : "";
   tip.innerHTML = `<b>${label}</b><br>${fmt(best.diam_km, 1)} km across${score}${where}`;
   let left = mx + 14;
   if (left + 240 > rect.width) left = mx - 240;
@@ -702,6 +735,7 @@ $("upload-form").addEventListener("submit", async (e) => {
       uploaded: true, size_px: parsed.shape[0], scale_m: 118.4505876, lat: +$("up-lat").value,
       lon: +$("up-lon").value, heightsArr: heights, rimsArr: null, detections: body.craters, catalog: [],
     }, body.seconds);
+    loadMonitoring();
   } catch (err) {
     $("error").textContent = err.message.charAt(0).toUpperCase() + err.message.slice(1);
   } finally {

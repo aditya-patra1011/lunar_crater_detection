@@ -9,7 +9,7 @@ Research and portfolio use: finding lunar craters of about 1-32 km in LOLA eleva
 ## Inputs and outputs
 
 - **Input:** a 256 x 256 tile of heights at 118.45 m/px, reprojected to a local orthographic grid ([decision 0001](../docs/decisions/0001-orthographic-tiles.md)).
-- **Output:** circles in tile pixels (x, y, radius) and on the Moon (latitude, longitude, diameter), each with a score. The default threshold, 0.436, was chosen on val; the other settings are in `crater_detector.json`.
+- **Output:** circles in tile pixels (x, y, radius) and on the Moon (latitude, longitude, diameter), each with a score and a confidence: the estimated chance that it matches a catalog crater. The default threshold, 0.436, was chosen on val; the other settings are in `crater_detector.json`.
 
 ## Training data
 
@@ -29,18 +29,20 @@ On 429 test tiles from 7 further regions, under [the protocol](../docs/EVALUATIO
 | 32 and over | 0.000 | – | – |
 | **all** | **0.426** | **0.735** | **0.539** |
 
+Confidence was fitted on val detections. On test detections its calibration error is 0.014 and its Brier score 0.146, against 0.195 for one rate for all detections ([details](../docs/SERVING.md#confidence)).
+
 The U-Net alone scores F1 0.533 and the classical baseline 0.369. Over 8 km this detector scores 0.562, against 0.351 and 0.443. The 16-32 km row rests on 21 detections and 68 craters, so it is uncertain.
 
 ## Known limitations
 
 - It finds fewer than half of catalogued craters at this threshold. Recall on 1-2 km craters, 70% of test craters, is 0.38.
 - Nothing over 32 km was found.
-- Precision is a lower bound, because the catalog misses real craters. The false positive audit has not been done yet.
+- Precision and confidence are lower bounds, because the catalog misses real craters. A sample of 60 unmatched test detections has been prepared for checking by eye ([docs/audit](../docs/audit/README.md)); it has not been judged yet.
 - The small-crater model comes from one training run. Three seeds of the two-output network agree closely on val, but that is a different network. There are only 7 test regions, and results by terrain type have not been measured.
 - It takes about 1.6 s per tile on a laptop CPU, mostly in ring matching.
-- The service checks a tile's shape but not its scale or projection, so tiles must be prepared like the training tiles.
+- The service checks a tile's shape but not its scale or projection, so tiles must be prepared like the training tiles. Its drift monitor flags tiles whose heights, slopes or scores differ from the reference tiles ([details](../docs/SERVING.md#monitoring)), but it needs 100 tiles to judge and can miss smaller changes.
 - Tuning assumed 118 m/px; other resolutions are untested.
 
 ## Files
 
-`crater_detector.onnx` (63 MB) and the `best.pt` files it was exported from are not in this repository. They can be rebuilt with the [training notebook](../notebooks/train_unet_colab.ipynb) and the export command in [docs/SERVING.md](../docs/SERVING.md).
+`crater_detector.onnx` (63 MB), `crater_detector.confidence.json`, `crater_detector.reference.json` and the `best.pt` files are not in this repository. They can be rebuilt with the [training notebook](../notebooks/train_unet_colab.ipynb) and the commands in [docs/SERVING.md](../docs/SERVING.md).
